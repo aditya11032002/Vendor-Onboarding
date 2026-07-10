@@ -1,0 +1,205 @@
+[
+  {
+    "id": "v1_acme_tech",
+    "legalName": "Acme Tech Solutions Private Limited",
+    "tradeName": "Acme Tech",
+    "entityType": "Private Limited",
+    "dateOfIncorporation": "2018-05-15",
+    "cin": "U72900MH2018PTC310000",
+    "pan": "AACCA1234F",
+    "gstStatus": "Registered",
+    "gstin": "27AACCA1234F1Z5",
+    "msmeStatus": "Yes",
+    "udyamNumber": "UDYAM-MH-19-0012345",
+    "registeredAddress": {
+      "street": "402, Dynasty Business Park, Andheri-Kurla Road, Andheri East",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400069",
+      "stateCode": "27"
+    },
+    "billingAddress": {
+      "street": "402, Dynasty Business Park, Andheri-Kurla Road, Andheri East",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400069",
+      "stateCode": "27"
+    },
+    "primaryContact": {
+      "name": "Rajesh Kumar",
+      "designation": "Director",
+      "mobile": "9876543210",
+      "email": "rajesh@acmetech.in"
+    },
+    "financeContact": {
+      "name": "Amit Shah",
+      "designation": "Finance Head",
+      "mobile": "9820012345",
+      "email": "finance@acmetech.in"
+    },
+    "bankDetails": {
+      "beneficiaryName": "Acme Tech Solutions Private Limited",
+      "bankName": "HDFC Bank",
+      "branchName": "Andheri East Branch",
+      "accountNumber": "50100234567890",
+      "ifscCode": "HDFC0000040",
+      "accountType": "Current Account"
+    },
+    "status": "Pending",
+    "comments": "PAN and GSTIN details look correct. Bank verification (penny drop) pending.",
+    "createdAt": "2026-07-02T10:15:30.000Z",
+    "updatedAt": "2026-07-02T10:15:30.000Z"
+  },
+  {
+    "id": "v2_sharma_elec",
+    "legalName": "Sharma Electricals & Services",
+    "tradeName": "Sharma Electricals",
+    "entityType": "Proprietorship",
+    "dateOfIncorporation": "2015-09-01",
+    "pan": "DGPS1234A",
+    "gstStatus": "Registered",
+    "gstin": "07DGPS1234A1ZD",
+    "msmeStatus": "Yes",
+    "udyamNumber": "UDYAM-DL-02-0054321",
+    "registeredAddress": {
+      "street": "Shop No 12, Palika Bazar, Connaught Place",
+      "city": "New Delhi",
+      "state": "Delhi",
+      "pincode": "110001",
+      "stateCode": "07"
+    },
+    "billingAddress": {
+      "street": "Shop No 12, Palika Bazar, Connaught Place",
+      "city": "New Delhi",
+      "state": "Delhi",
+      "pincode": "110001",
+      "stateCode": "07"
+    },
+    "primaryContact": {
+      "name": "Vijay Sharma",
+      "designation": "Proprietor",
+      "mobile": "9988776655",
+      "email": "vijay.sharma@gmail.com"
+    },
+    "financeContact": {
+      "name": "Vijay Sharma",
+      "designation": "Proprietor",
+      "mobile": "9988776655",
+      "email": "vijay.sharma@gmail.com"
+    },
+    "bankDetails": {
+      "beneficiaryName": "Sharma Electricals & Services",
+      "bankName": "State Bank of India",
+      "branchName": "Connaught Place Branch",
+      "accountNumber": "30987654321",
+      "ifscCode": "SBIN0000691",
+      "accountType": "Current Account"
+    },
+    "status": "Approved",
+    "comments": "All documents verified. Bank account matched PAN and GST database details.",
+    "createdAt": "2026-07-01T14:22:10.000Z",
+    "updatedAt": "2026-07-02T09:30:00.000Z"
+  },
+  {
+    "id": "v3_global_log",
+    "legalName": "Global Logistics LLP",
+    "tradeName": "Global Logistics",
+    "entityType": "LLP",
+    "dateOfIncorporation": "2020-11-20",
+    "llpin": "AAS-4321",
+    "pan": "AAHFL9876B",
+    "gstStatus": "Registered",
+    "gstin": "29AAHFL9876B1Z3",
+    "msmeStatus": "No",
+    "registeredAddress": {
+      "street": "88, ITPL Main Road, Whitefield",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560066",
+      "stateCode": "29"
+    },
+    "billingAddress": {
+      "street": "88, ITPL Main Road, Whitefield",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560066",
+      "stateCode": "29"
+    },
+    "primaryContact": {
+      "name": "Karan Johar",
+      "designation": "Partner",
+      "mobile": "9812345678",
+      "email": "karan@globallogistics.co.in"
+    },
+    "financeContact": {
+      "name": "Pooja Hegde",
+      "designation": "Accounts Executive",
+      "mobile": "9845012345",
+      "email": "accounts@globallogistics.co.in"
+    },
+    "bankDetails": {
+      "beneficiaryName": "Global Logistics Services",
+      "bankName": "ICICI Bank",
+      "branchName": "Whitefield Branch",
+      "accountNumber": "000401509999",
+      "ifscCode": "ICIC0000004",
+      "accountType": "Current Account"
+    },
+    "status": "Rejected",
+    "comments": "Rejected: Bank account beneficiary name ('Global Logistics Services') does not match the legal PAN name ('Global Logistics LLP'). Resubmission required.",
+    "createdAt": "2026-06-30T09:12:00.000Z",
+    "updatedAt": "2026-07-01T11:00:00.000Z"
+  },
+  {
+    "id": "7e6fd86b-54fd-4384-9d3c-0dae8a1246d0",
+    "legalName": "Tata Consultancy Services Ltd",
+    "tradeName": "TCS",
+    "entityType": "Public Limited",
+    "dateOfIncorporation": "1968-04-01",
+    "cin": "L72200MH1995PLC090062",
+    "llpin": "",
+    "pan": "AAACT1234A",
+    "gstStatus": "Registered",
+    "gstin": "27AAACT1234A1Z9",
+    "msmeStatus": "No",
+    "udyamNumber": "",
+    "registeredAddress": {
+      "street": "TCS House, Raveline Street, Fort",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400001",
+      "stateCode": "27"
+    },
+    "billingAddress": {
+      "street": "",
+      "city": "",
+      "state": "",
+      "pincode": "",
+      "stateCode": ""
+    },
+    "primaryContact": {
+      "name": "Natarajan Chandrasekaran",
+      "designation": "Chairman",
+      "mobile": "9900990099",
+      "email": "n.chandra@tcs.com"
+    },
+    "financeContact": {
+      "name": "",
+      "designation": "",
+      "mobile": "",
+      "email": ""
+    },
+    "bankDetails": {
+      "beneficiaryName": "Tata Consultancy Services Ltd",
+      "bankName": "State Bank of India",
+      "branchName": "Backbay Recl Branch",
+      "accountNumber": "100200300400",
+      "ifscCode": "SBIN0001823",
+      "accountType": "Current Account"
+    },
+    "status": "Approved",
+    "comments": "All tax details (PAN & GSTIN) matched, bank account details successfully verified via mock penny-drop.",
+    "createdAt": "2026-07-03T07:18:26.141Z",
+    "updatedAt": "2026-07-03T07:20:12.763Z"
+  }
+]

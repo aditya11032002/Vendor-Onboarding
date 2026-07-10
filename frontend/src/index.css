@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Baseline: Light Mode Slate Palette (RGB space-separated) */
+  --slate-950: 248 250 252;  /* maps dark page bg (950) -> light gray bg */
+  --slate-900: 255 255 255;  /* maps dark card bg (900) -> pure white card */
+  --slate-850: 241 245 249;  /* maps dark secondary bg (850) -> light gray secondary */
+  --slate-800: 226 232 240;  /* maps dark border (800) -> light gray border */
+  --slate-700: 203 213 225;  /* maps input borders -> gray border */
+  --slate-600: 148 163 184;  /* placeholder/disabled -> slate-400 */
+  --slate-500: 100 116 139;  /* secondary text stays slate-500 */
+  --slate-400: 71 85 105;    /* secondary text (400) -> dark slate-600 */
+  --slate-300: 51 65 85;     /* tertiary text -> dark slate-700 */
+  --slate-200: 30 41 59;     /* secondary heading (200) -> dark slate-800 */
+  --slate-100: 15 23 42;     /* primary text (100) -> dark slate-900 */
+  --slate-50: 2 6 23;        /* light icons (50) -> very dark slate-950 */
+
+  /* Baseline Status Colors - Light Theme (RGB) */
+  --emerald-950: 236 253 245; /* light green bg */
+  --emerald-800: 167 243 208; /* light green border */
+  --emerald-400: 4 120 87;    /* dark green text */
+
+  --amber-950: 254 243 199;  /* light yellow bg */
+  --amber-800: 253 230 138;  /* light yellow border */
+  --amber-400: 180 83 9;     /* dark yellow text */
+
+  --rose-950: 255 241 242;   /* light red bg */
+  --rose-800: 254 205 211;   /* light red border */
+  --rose-400: 190 24 74;     /* dark red text */
+
+  --purple-950: 250 245 255;  /* light purple bg */
+  --purple-800: 233 213 255;  /* light purple border */
+  --purple-400: 126 34 206;   /* dark purple text */
+
+  --indigo-950: 238 242 255; /* light indigo bg */
+  --indigo-900: 224 231 255; /* light indigo hover bg */
+  --indigo-700: 199 210 254; /* light indigo border */
+  --indigo-400: 79 70 229;   /* dark indigo text */
+  --indigo-300: 67 56 202;   /* hover dark indigo text */
+}
+
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-100 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom scrollbar for modern aesthetics */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full hover:bg-slate-600 transition-colors;
+}
+
+/* Force all inputs to white background with dark text and standard borders */
+input, select, textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #94a3b8 !important;
+}
