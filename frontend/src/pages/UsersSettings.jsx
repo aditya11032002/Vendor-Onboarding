@@ -228,7 +228,7 @@ export default function UsersSettings({ token }) {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-400 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <tr className="bg-slate-950 border-b border-slate-400 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                     <th className="p-3 pl-4">Username</th>
                     <th className="p-3">Role</th>
                     <th className="p-3">Created On</th>
@@ -237,7 +237,7 @@ export default function UsersSettings({ token }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                   {users.map(user => (
-                    <tr key={user.id} className="hover:bg-slate-50/50 transition">
+                    <tr key={user.id} className="hover:bg-slate-950 transition">
                       <td className="p-3 pl-4 font-bold text-slate-400">{user.username}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${user.role === 'Admin'

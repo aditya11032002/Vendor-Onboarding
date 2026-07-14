@@ -169,7 +169,7 @@ export default function App() {
       </aside>
 
       {/* Main Panel Content Area */}
-      <main className="flex-1 min-h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200">
         {currentPage === 'form' ? (
           <VendorForm />
         ) : currentPage === 'users' ? (
