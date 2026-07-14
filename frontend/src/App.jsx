@@ -75,7 +75,7 @@ export default function App() {
   // Enforce Login globally before any page or navigation can be rendered
   if (!token) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center">
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center">
         <div className="w-full">
           <Login onLoginSuccess={handleLoginSuccess} />
         </div>

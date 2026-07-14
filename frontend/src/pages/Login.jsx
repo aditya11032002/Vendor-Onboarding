@@ -46,9 +46,9 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-50/50">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-950">
       {/* Login Box */}
-      <div className="w-full max-w-md bg-white border border-slate-200/50 shadow-sm rounded-2xl p-8">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-200/50 shadow-sm rounded-2xl p-8">
         
         {/* Logo and Header */}
         <div className="flex flex-col items-center mb-8">
@@ -129,7 +129,7 @@ export default function Login({ onLoginSuccess }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-3.5 px-4 font-semibold text-xs transition-all focus:outline-none focus:ring-2 focus:ring-slate-500/50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed group shadow-sm"
+            className="w-full mt-6 bg-slate-50 hover:bg-slate-100 text-slate-950 rounded-xl py-3.5 px-4 font-semibold text-xs transition-all focus:outline-none focus:ring-2 focus:ring-slate-500/50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed group shadow-sm"
           >
             {loading ? (
               <>
