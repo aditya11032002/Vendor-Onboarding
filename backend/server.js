@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
-const ocrService = require('./ocr_service');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
 const googleFormService = require('./google_form_service');

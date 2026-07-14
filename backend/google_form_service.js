@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require('uuid');
-const ocrService = require('./ocr_service');
 
 // Mock tax identifier verification engine
 const verifyTaxIdentifiers = async (pan, gstin, legalName) => {
@@ -157,53 +156,8 @@ async function processGoogleFormWebhook(formPayload, pool) {
     otherCertifications: formPayload["Other Certifications"] || ''
   };
 
-  // Map file attachments direct IDs and filenames
-  const panFilenames = formPayload["PAN Card_filenames"] || [];
-  const gstFilenames = formPayload["GST Certificate_filenames"] || [];
-  let panFileName = panFilenames.length > 0 ? panFilenames[0] : '';
-  let gstinFileName = gstFilenames.length > 0 ? gstFilenames[0] : '';
-
-  // Fallback to Documents Upload keyword search if direct fields not present
-  if (!panFileName || !gstinFileName) {
-    const documentsUploadFilenames = formPayload["Documents Upload_filenames"] || [];
-    for (let i = 0; i < documentsUploadFilenames.length; i++) {
-      const fname = documentsUploadFilenames[i].toLowerCase();
-      if (fname.includes('pan')) {
-        panFileName = documentsUploadFilenames[i];
-      } else if (fname.includes('gst')) {
-        gstinFileName = documentsUploadFilenames[i];
-      }
-    }
-  }
-
-  let ocrPanError = null;
-  let ocrGstError = null;
-
-  if (panFileName) {
-    const ocrResult = await ocrService.processOcr(panFileName, pan, 'PAN');
-    if (!ocrResult.success) {
-      ocrPanError = ocrResult.error;
-    } else if (ocrResult.extractedValue !== pan) {
-      ocrPanError = `PAN Card Document Mismatch (Extracted: "${ocrResult.extractedValue}", Typed: "${pan}").`;
-    }
-  }
-
-  if (gstinFileName) {
-    const ocrResult = await ocrService.processOcr(gstinFileName, gstin, 'GSTIN');
-    if (!ocrResult.success) {
-      ocrGstError = ocrResult.error;
-    } else if (ocrResult.extractedValue !== gstin) {
-      ocrGstError = `GSTIN Document Mismatch (Extracted: "${ocrResult.extractedValue}", Typed: "${gstin}").`;
-    }
-  }
-
-  let status = 'Pending';
-  let comments = 'Onboarded via Google Form Webhook.';
-
-  if (ocrPanError || ocrGstError) {
-    status = 'Rejected';
-    comments = `Document Verification Failed. ${ocrPanError || ''} ${ocrGstError || ''}`;
-  }
+  const status = 'Pending';
+  const comments = 'Onboarded via Google Form Webhook.';
 
   // Map googleFormResponseId
   const googleFormResponseId = formPayload.googleFormResponseId || null;

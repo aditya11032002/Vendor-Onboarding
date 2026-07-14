@@ -3,6 +3,7 @@ import {
   Building2, CreditCard, FileText, Phone, Mail, User, 
   MapPin, ArrowRight, ArrowLeft, UploadCloud, CheckCircle2, AlertCircle
 } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 const ENTITY_TYPES = [
   'Proprietorship', 'Partnership', 'LLP', 'Private Limited', 
@@ -212,7 +213,7 @@ export default function VendorForm() {
     };
 
     try {
-      const response = await fetch('/api/vendors', {
+      const response = await fetch(`${API_BASE_URL}/api/vendors`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

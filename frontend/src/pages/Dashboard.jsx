@@ -3,6 +3,7 @@ import {
   Search, Filter, CheckCircle2, XCircle, AlertCircle, Eye,
   Building2, CreditCard, X, MapPin, User, FileText, ArrowUpDown, ShieldCheck
 } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 export default function Dashboard({ token, userRole, onLogout }) {
   const [vendors, setVendors] = useState([]);
@@ -89,7 +90,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setEditLoading(true);
     try {
-      const res = await fetch(`/api/vendors/${selectedVendor.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/vendors/${selectedVendor.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +124,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const fetchVendors = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/vendors', {
+      const res = await fetch(`${API_BASE_URL}/api/vendors`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -155,7 +156,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/vendors/${vendorId}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/vendors/${vendorId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

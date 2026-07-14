@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Shield, UserX, AlertCircle, CheckCircle2, User, Key, ShieldCheck } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 export default function UsersSettings({ token }) {
   const [users, setUsers] = useState([]);
@@ -18,7 +19,7 @@ export default function UsersSettings({ token }) {
     try {
       setLoading(true);
       setError('');
-      const res = await fetch('/api/users', {
+      const res = await fetch(`${API_BASE_URL}/api/users`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -53,7 +54,7 @@ export default function UsersSettings({ token }) {
     setSuccess('');
 
     try {
-      const res = await fetch('/api/users', {
+      const res = await fetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -93,7 +94,7 @@ export default function UsersSettings({ token }) {
     setSuccess('');
 
     try {
-      const res = await fetch(`/api/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
