@@ -242,11 +242,86 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 1. Get all vendors
+// 1. Get all vendors (with server-side pagination, search, and filters)
 app.get('/api/vendors', authenticateAdmin, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM vendors ORDER BY "createdAt" DESC');
-    res.json(result.rows);
+    // 1. Get global stats for the dashboard summary
+    const statsResult = await pool.query('SELECT status, COUNT(*) FROM vendors GROUP BY status');
+    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    statsResult.rows.forEach(row => {
+      const count = parseInt(row.count, 10);
+      stats.total += count;
+      if (row.status === 'Pending') stats.pending = count;
+      if (row.status === 'Approved') stats.approved = count;
+      if (row.status === 'Rejected') stats.rejected = count;
+    });
+
+    const page = parseInt(req.query.page, 10);
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    // Backward compatibility: if page is not specified, return all records
+    if (isNaN(page) || page < 1) {
+      const result = await pool.query('SELECT * FROM vendors ORDER BY "createdAt" DESC');
+      return res.json(result.rows);
+    }
+
+    const search = req.query.search || '';
+    const status = req.query.status || 'All';
+    const entityType = req.query.entityType || 'All';
+
+    let queryStr = 'SELECT * FROM vendors WHERE 1=1';
+    let countStr = 'SELECT COUNT(*) FROM vendors WHERE 1=1';
+    const queryParams = [];
+    const countParams = [];
+    let paramIdx = 1;
+
+    if (search.trim()) {
+      const searchPattern = `%${search.toLowerCase().trim()}%`;
+      const searchClause = ` AND (LOWER("legalName") LIKE $${paramIdx} OR LOWER(pan) LIKE $${paramIdx} OR LOWER(gstin) LIKE $${paramIdx} OR LOWER("tradeName") LIKE $${paramIdx})`;
+      queryStr += searchClause;
+      countStr += searchClause;
+      queryParams.push(searchPattern);
+      countParams.push(searchPattern);
+      paramIdx++;
+    }
+
+    if (status !== 'All') {
+      const statusClause = ` AND status = $${paramIdx}`;
+      queryStr += statusClause;
+      countStr += statusClause;
+      queryParams.push(status);
+      countParams.push(status);
+      paramIdx++;
+    }
+
+    if (entityType !== 'All') {
+      const entityClause = ` AND "entityType" = $${paramIdx}`;
+      queryStr += entityClause;
+      countStr += entityClause;
+      queryParams.push(entityType);
+      countParams.push(entityType);
+      paramIdx++;
+    }
+
+    // Get total count of filtered vendors
+    const countResult = await pool.query(countStr, countParams);
+    const totalFiltered = parseInt(countResult.rows[0].count, 10);
+
+    // Add Order by, Limit, and Offset to query string
+    queryStr += ` ORDER BY "createdAt" DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+    const offset = (page - 1) * limit;
+    queryParams.push(limit, offset);
+
+    const listResult = await pool.query(queryStr, queryParams);
+
+    res.json({
+      vendors: listResult.rows,
+      total: totalFiltered,
+      page,
+      limit,
+      totalPages: Math.ceil(totalFiltered / limit) || 1,
+      stats
+    });
   } catch (error) {
     console.error('Error fetching vendors:', error);
     res.status(500).json({ message: 'Internal server error while fetching vendors.' });

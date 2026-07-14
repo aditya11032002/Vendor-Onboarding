@@ -15,6 +15,13 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const [statusFilter, setStatusFilter] = useState('All');
   const [entityFilter, setEntityFilter] = useState('All');
 
+  // Pagination & Debounced Search State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalVendors, setTotalVendors] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [dashboardStats, setDashboardStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+
   // Detail Drawer State
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [commentInput, setCommentInput] = useState('');
@@ -120,11 +127,18 @@ export default function Dashboard({ token, userRole, onLogout }) {
     }
   };
 
-  // Fetch all vendors from API
+  // Fetch all vendors from API (with pagination, search, and filters)
   const fetchVendors = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/vendors`, {
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: '10',
+        search: debouncedSearch,
+        status: statusFilter,
+        entityType: entityFilter
+      });
+      const res = await fetch(`${API_BASE_URL}/api/vendors?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -135,7 +149,26 @@ export default function Dashboard({ token, userRole, onLogout }) {
       }
       if (!res.ok) throw new Error('Failed to fetch vendors list');
       const data = await res.json();
-      setVendors(data);
+      
+      // If server returned paginated object
+      if (data && data.vendors) {
+        setVendors(data.vendors);
+        setTotalPages(data.totalPages || 1);
+        setTotalVendors(data.total || 0);
+        setDashboardStats(data.stats || { total: 0, pending: 0, approved: 0, rejected: 0 });
+      } else {
+        // Fallback backward compatibility
+        setVendors(data || []);
+        setTotalPages(1);
+        setTotalVendors((data || []).length);
+        const stats = {
+          total: (data || []).length,
+          pending: (data || []).filter(v => v.status === 'Pending').length,
+          approved: (data || []).filter(v => v.status === 'Approved').length,
+          rejected: (data || []).filter(v => v.status === 'Rejected').length
+        };
+        setDashboardStats(stats);
+      }
     } catch (err) {
       setError(err.message || 'Error loading vendor data.');
     } finally {
@@ -143,9 +176,24 @@ export default function Dashboard({ token, userRole, onLogout }) {
     }
   };
 
+  // Search Debouncer Effect
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentPage(1); // reset to first page when search changes
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Reset to first page when status or entity filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, entityFilter]);
+
+  // Refetch when page index, debounced search, or dropdown filters change
   useEffect(() => {
     fetchVendors();
-  }, []);
+  }, [currentPage, debouncedSearch, statusFilter, entityFilter, token]);
 
   // Handle Approve / Reject action
   const handleStatusUpdate = async (vendorId, newStatus) => {
@@ -189,30 +237,14 @@ export default function Dashboard({ token, userRole, onLogout }) {
     }
   };
 
-  // Filter vendors based on selections
-  const filteredVendors = vendors.filter(vendor => {
-    const matchesSearch =
-      vendor.legalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vendor.pan.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (vendor.gstin && vendor.gstin.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (vendor.tradeName && vendor.tradeName.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Server-side filtered vendors list
+  const filteredVendors = vendors;
 
-    const matchesStatus = statusFilter === 'All' || vendor.status === statusFilter;
-    const matchesEntity = entityFilter === 'All' || vendor.entityType === entityFilter;
+  // Global summary statistics
+  const stats = dashboardStats;
 
-    return matchesSearch && matchesStatus && matchesEntity;
-  });
-
-  // Calculate statistics
-  const stats = {
-    total: vendors.length,
-    pending: vendors.filter(v => v.status === 'Pending').length,
-    approved: vendors.filter(v => v.status === 'Approved').length,
-    rejected: vendors.filter(v => v.status === 'Rejected').length
-  };
-
-  // Unique entity types in database for filter list
-  const entityTypes = ['All', ...new Set(vendors.map(v => v.entityType))];
+  // Standard entity types list for dropdown filter
+  const entityTypes = ['All', 'Proprietorship', 'Partnership', 'LLP', 'Private Limited', 'Public Limited', 'HUF', 'Trust', 'Society'];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8">
@@ -428,6 +460,47 @@ export default function Dashboard({ token, userRole, onLogout }) {
                   ))}
                 </tbody>
               </table>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-slate-800 bg-slate-900/50">
+                  <span className="text-xs text-slate-400">
+                    Showing page <span className="font-semibold text-slate-200">{currentPage}</span> of <span className="font-semibold text-slate-200">{totalPages}</span> pages (Total: {totalVendors} vendors)
+                  </span>
+                  
+                  <div className="flex gap-2">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none transition"
+                    >
+                      Previous
+                    </button>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNumber => (
+                      <button
+                        key={pageNumber}
+                        onClick={() => setCurrentPage(pageNumber)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                          currentPage === pageNumber
+                            ? 'bg-indigo-600 text-slate-100 border border-indigo-500'
+                            : 'bg-slate-950 border border-slate-800 text-slate-400 hover:bg-slate-800'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    ))}
+                    
+                    <button
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none transition"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
