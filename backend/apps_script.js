@@ -18,7 +18,7 @@
  */
 
 // Set this to your actual server endpoint
-const SERVER_URL = "https://crowd-scruffy-albatross.ngrok-free.dev/api/webhook/google-form";
+const SERVER_URL = "https://vendor-onboarding-1qrn.onrender.com/api/webhook/google-form";
 
 function onFormSubmit(e) {
   try {
