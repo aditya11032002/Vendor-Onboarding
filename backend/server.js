@@ -26,7 +26,10 @@ app.use(express.json());
 
 // Initialize PostgreSQL Connection Pool
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('127.0.0.1') && !process.env.DATABASE_URL.includes('localhost')
+    ? { rejectUnauthorized: false }
+    : false
 });
 
 // Auto-initialize PostgreSQL Database Tables on Startup
