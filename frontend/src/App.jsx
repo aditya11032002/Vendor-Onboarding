@@ -18,6 +18,7 @@ export default function App() {
   const [adminUser, setAdminUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
 
+
   const handleLoginSuccess = (newToken, username, role) => {
     localStorage.setItem('admin_token', newToken);
     localStorage.setItem('admin_username', username);
@@ -85,17 +86,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex transition-colors duration-200">
-      
+
       {/* Left Collapsible Sidebar */}
       <aside className={`bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-64'} h-screen sticky top-0 z-40 shrink-0`}>
-        
+
         {/* Top Branding Section */}
         <div className="flex flex-col">
           <div className={`flex items-center ${sidebarCollapsed ? 'justify-center py-4' : 'justify-between p-4'} border-b border-slate-200 dark:border-slate-800 min-h-[73px]`}>
             {!sidebarCollapsed && (
               <img src="/logo.png" alt="Inteliwaves Logo" className="h-6 w-auto object-contain" />
             )}
-            <button 
+            <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-500 dark:text-slate-400 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 transition-all"
               title={sidebarCollapsed ? "Expand Menu" : "Collapse Menu"}
@@ -112,11 +113,10 @@ export default function App() {
           <nav className="p-3 space-y-1">
             <button
               onClick={() => navigateTo('admin')}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${
-                currentPage === 'admin' 
-                  ? 'bg-indigo-600 text-white shadow-sm' 
+              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'admin'
+                  ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+                }`}
               title="Admin Panel"
             >
               <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -125,11 +125,10 @@ export default function App() {
 
             <button
               onClick={() => navigateTo('form')}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${
-                currentPage === 'form' 
-                  ? 'bg-indigo-600 text-white shadow-sm' 
+              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'form'
+                  ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+                }`}
               title="Vendor Form"
             >
               <UserPlus className="w-4 h-4 shrink-0" />
@@ -139,11 +138,10 @@ export default function App() {
             {userRole === 'Admin' && (
               <button
                 onClick={() => navigateTo('users')}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${
-                  currentPage === 'users' 
-                    ? 'bg-indigo-600 text-white shadow-sm' 
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'users'
+                    ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
+                  }`}
                 title="User Settings"
               >
                 <Users className="w-4 h-4 shrink-0 text-indigo-500" />

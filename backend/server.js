@@ -2,13 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
 const googleFormService = require('./google_form_service');
 require('dotenv').config();
 
-// Active sessions in-memory store (token -> { username, role })
-const activeSessions = new Map();
+const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_super_secret_key_123';
 
 // Helper to hash passwords using SHA-256
 const hashPassword = (password, salt) => {
@@ -195,12 +195,13 @@ const authenticateAdmin = (req, res, next) => {
     return next();
   }
   
-  const session = activeSessions.get(token);
-  if (!session) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
     return res.status(401).json({ message: 'Unauthorized access. Invalid or expired token.' });
   }
-  req.user = session;
-  next();
 };
 
 const requireAdmin = (req, res, next) => {
@@ -231,9 +232,12 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
 
-    // Generate dynamic session token
-    const token = uuidv4();
-    activeSessions.set(token, { username: user.username, role: user.role });
+    // Generate signed stateless JSON Web Token (JWT)
+    const token = jwt.sign(
+      { username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
     res.json({ token, username: user.username, role: user.role });
   } catch (error) {
