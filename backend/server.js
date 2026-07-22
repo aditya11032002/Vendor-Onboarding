@@ -53,6 +53,9 @@ const authLimiter = rateLimit({
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust reverse proxies (Render, Vercel, Cloudflare, Ngrok) for express-rate-limit
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet({
   contentSecurityPolicy: false,
