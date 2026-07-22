@@ -750,16 +750,31 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
       emailSent = true;
       emailMessage = 'Vendor registered and invitation email is being sent.';
 
+      const cleanPass = smtpPass.replace(/\s+/g, '');
       const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: parseInt(smtpPort, 10),
-        secure: parseInt(smtpPort, 10) === 465, // true for 465, false for other ports
+
+      // Use Gmail preset if host is smtp.gmail.com for cloud host compatibility
+      const isGmail = smtpHost.includes('gmail') || smtpUser.includes('gmail') || smtpUser.includes('inteliwaves');
+      const transportOptions = isGmail ? {
+        service: 'gmail',
         auth: {
           user: smtpUser,
-          pass: smtpPass
+          pass: cleanPass
         }
-      });
+      } : {
+        host: smtpHost,
+        port: parseInt(smtpPort, 10),
+        secure: parseInt(smtpPort, 10) === 465,
+        auth: {
+          user: smtpUser,
+          pass: cleanPass
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      };
+
+      const transporter = nodemailer.createTransport(transportOptions);
 
       const mailOptions = {
         from: `"VK18 Vendor Portal" <${smtpUser}>`,
@@ -786,8 +801,8 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
       };
 
       // Non-blocking background dispatch
-      transporter.sendMail(mailOptions).then(() => {
-        console.log(`[EMAIL DISPATCHED] Vendor invitation email sent successfully to ${cleanEmail}`);
+      transporter.sendMail(mailOptions).then((info) => {
+        console.log(`[EMAIL DISPATCHED] Vendor invitation email sent to ${cleanEmail}. MessageId: ${info.messageId}`);
       }).catch((mailError) => {
         console.error('SMTP Error dispatching vendor invitation email:', mailError);
       });
