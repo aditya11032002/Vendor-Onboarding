@@ -63,9 +63,12 @@ app.use(cookieParser());
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
+    const clientOrigin = process.env.CLIENT_ORIGIN;
     if (
+      (clientOrigin && origin === clientOrigin) ||
       origin.startsWith('http://localhost:') || 
       origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.vercel.app') ||
       origin.endsWith('.ngrok-free.app') ||
       origin.endsWith('.ngrok.io')
     ) {
