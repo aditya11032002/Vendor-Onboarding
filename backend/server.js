@@ -748,6 +748,7 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
     const smtpPass = process.env.SMTP_PASS;
 
     console.log(`[INVITATION CREATED] Vendor Email: ${cleanEmail} | Temporary Password: ${generatedPassword}`);
+    console.log(`[SMTP CONFIG CHECK] Host: ${smtpHost || 'NONE'} | Port: ${smtpPort || 'NONE'} | User: ${smtpUser || 'NONE'}`);
 
     if (smtpHost && smtpUser && smtpPass) {
       emailSent = true;
@@ -756,9 +757,9 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
       const cleanPass = smtpPass.replace(/\s+/g, '');
       const nodemailer = require('nodemailer');
 
-      // Use Gmail preset if host is smtp.gmail.com for cloud host compatibility
+      // For Gmail, service: 'gmail' preset avoids cloud host port 587 ETIMEDOUT blocks
       const isGmail = smtpHost.includes('gmail') || smtpUser.includes('gmail') || smtpUser.includes('inteliwaves');
-      const transportOptions = isGmail ? {
+      const transportConfig = isGmail ? {
         service: 'gmail',
         auth: {
           user: smtpUser,
@@ -766,8 +767,8 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
         }
       } : {
         host: smtpHost,
-        port: parseInt(smtpPort, 10),
-        secure: parseInt(smtpPort, 10) === 465,
+        port: parseInt(smtpPort, 10) || 465,
+        secure: (parseInt(smtpPort, 10) || 465) === 465,
         auth: {
           user: smtpUser,
           pass: cleanPass
@@ -777,7 +778,7 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
         }
       };
 
-      const transporter = nodemailer.createTransport(transportOptions);
+      const transporter = nodemailer.createTransport(transportConfig);
 
       const mailOptions = {
         from: `"VK18 Vendor Portal" <${smtpUser}>`,
@@ -805,9 +806,9 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
 
       // Non-blocking background dispatch
       transporter.sendMail(mailOptions).then((info) => {
-        console.log(`[EMAIL DISPATCHED] Vendor invitation email sent to ${cleanEmail}. MessageId: ${info.messageId}`);
+        console.log(`[EMAIL DISPATCHED SUCCESS] Vendor invitation email sent to ${cleanEmail}. MessageId: ${info.messageId}`);
       }).catch((mailError) => {
-        console.error('SMTP Error dispatching vendor invitation email:', mailError);
+        console.error(`[SMTP ERROR FAILURE] Failed to send email to ${cleanEmail}:`, mailError.message || mailError);
       });
     }
 
