@@ -757,28 +757,52 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
       const cleanPass = smtpPass.replace(/\s+/g, '');
       const nodemailer = require('nodemailer');
 
-      // For Gmail, service: 'gmail' preset avoids cloud host port 587 ETIMEDOUT blocks
-      const isGmail = smtpHost.includes('gmail') || smtpUser.includes('gmail') || smtpUser.includes('inteliwaves');
-      const transportConfig = isGmail ? {
-        service: 'gmail',
-        auth: {
-          user: smtpUser,
-          pass: cleanPass
-        }
-      } : {
-        host: smtpHost,
-        port: parseInt(smtpPort, 10) || 465,
-        secure: (parseInt(smtpPort, 10) || 465) === 465,
-        auth: {
-          user: smtpUser,
-          pass: cleanPass
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      };
+      const host = (smtpHost || '').toLowerCase();
+      let transportOptions;
 
-      const transporter = nodemailer.createTransport(transportConfig);
+      if (host.includes('office365') || host.includes('outlook')) {
+        // Microsoft 365 / Outlook SMTP configuration
+        transportOptions = {
+          host: smtpHost,
+          port: parseInt(smtpPort, 10) || 587,
+          secure: false,
+          requireTLS: true,
+          auth: {
+            user: smtpUser,
+            pass: cleanPass
+          },
+          tls: {
+            ciphers: 'SSLv3',
+            rejectUnauthorized: false
+          }
+        };
+      } else if (host.includes('gmail')) {
+        // Google Gmail SMTP configuration
+        transportOptions = {
+          service: 'gmail',
+          auth: {
+            user: smtpUser,
+            pass: cleanPass
+          }
+        };
+      } else {
+        // Generic SMTP configuration
+        const targetPort = parseInt(smtpPort, 10) || 465;
+        transportOptions = {
+          host: smtpHost,
+          port: targetPort,
+          secure: targetPort === 465,
+          auth: {
+            user: smtpUser,
+            pass: cleanPass
+          },
+          tls: {
+            rejectUnauthorized: false
+          }
+        };
+      }
+
+      const transporter = nodemailer.createTransport(transportOptions);
 
       const mailOptions = {
         from: `"VK18 Vendor Portal" <${smtpUser}>`,
@@ -850,12 +874,19 @@ app.delete('/api/users/:id', authenticateAdmin, requireAdmin, async (req, res) =
   }
 });
 
-// Serve frontend in production (optional, we can run them on separate ports for dev)
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
-app.get('*', (req, res, next) => {
-  if (req.url.startsWith('/api')) return next();
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
-});
+// Serve frontend build if dist folder exists (monorepo), otherwise return API status message
+const frontendDistPath = path.join(__dirname, '../frontend/dist/index.html');
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  app.get('*', (req, res, next) => {
+    if (req.url.startsWith('/api')) return next();
+    res.sendFile(frontendDistPath);
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.json({ success: true, message: 'VK18 Vendor Onboarding Backend API is running.' });
+  });
+}
 
 // Start Server
 app.listen(PORT, () => {
