@@ -101,13 +101,15 @@ const getPaginatedVendors = async (pool, queryParams) => {
     if (row.status === 'Rejected') stats.rejected = count;
   });
 
+  const allFields = 'id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan, "gstStatus", gstin, "msmeStatus", "udyamNumber", "registeredAddress", "billingAddress", "primaryContact", "financeContact", "bankDetails", "panVerificationStatus", "gstVerificationStatus", "verificationLogs", status, comments, "googleFormResponseId", "panFileUrl", "gstFileUrl", "createdAt", "updatedAt"';
+
   // Backward compatibility: if page is not specified, return all
   if (isNaN(page) || page < 1) {
-    const result = await pool.query('SELECT id, "legalName", "tradeName", "entityType", "pan", gstin, "msmeStatus", status, "googleFormResponseId", "createdAt" FROM vendors ORDER BY "createdAt" DESC');
+    const result = await pool.query(`SELECT ${allFields} FROM vendors ORDER BY "createdAt" DESC`);
     return { vendors: result.rows, total: result.rows.length, page: 1, limit: result.rows.length, totalPages: 1, stats };
   }
 
-  let queryStr = 'SELECT id, "legalName", "tradeName", "entityType", "pan", gstin, "msmeStatus", status, "googleFormResponseId", "createdAt" FROM vendors WHERE 1=1';
+  let queryStr = `SELECT ${allFields} FROM vendors WHERE 1=1`;
   let countStr = 'SELECT COUNT(*) FROM vendors WHERE 1=1';
   const values = [];
   const countValues = [];
