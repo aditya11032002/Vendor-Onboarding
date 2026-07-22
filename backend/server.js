@@ -1,28 +1,99 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const bcrypt = require('bcryptjs');
+const cookieParser = require('cookie-parser');
 const googleFormService = require('./google_form_service');
+const dbService = require('./vendor_db_service');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_super_secret_key_123';
 
-// Helper to hash passwords using SHA-256
-const hashPassword = (password, salt) => {
+// Hashing round count for Bcrypt
+const BCRYPT_ROUNDS = 10;
+
+// Helper to hash passwords using SHA-256 (Legacy Compatibility)
+const legacyHashPassword = (password, salt) => {
   const hash = crypto.createHash('sha256');
   hash.update(password + salt);
   return hash.digest('hex');
 };
 
+// New Bcrypt hash helper
+const hashPassword = async (password) => {
+  return await bcrypt.hash(password, BCRYPT_ROUNDS);
+};
+
+// Global rate limiting rule (300 requests / 15 minutes)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 300,
+  message: { message: 'Too many requests from this IP. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Strict rate limiting rule for authentication (20 attempts / 15 minutes)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 20,
+  message: { message: 'Too many auth requests from this IP. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use(cookieParser());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      origin.startsWith('http://localhost:') || 
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.ngrok-free.app') ||
+      origin.endsWith('.ngrok.io')
+    ) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
 app.use(express.json());
+app.use(globalLimiter);
+
+// Serve uploaded documents statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Configure Multer for in-memory file buffers with validation filter
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB file size limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF and image files are allowed.'));
+    }
+  }
+});
 
 // Initialize PostgreSQL Connection Pool
 const pool = new Pool({
@@ -35,58 +106,8 @@ const pool = new Pool({
 // Auto-initialize PostgreSQL Database Tables on Startup
 const initializeDatabase = async () => {
   try {
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS vendors (
-        id UUID PRIMARY KEY,
-        "legalName" VARCHAR(255) NOT NULL,
-        "tradeName" VARCHAR(255),
-        "entityType" VARCHAR(100),
-        "dateOfIncorporation" VARCHAR(100),
-        cin VARCHAR(100),
-        llpin VARCHAR(100),
-        pan VARCHAR(50) NOT NULL,
-        "gstStatus" VARCHAR(100),
-        gstin VARCHAR(100),
-        "msmeStatus" VARCHAR(50),
-        "udyamNumber" VARCHAR(100),
-        "registeredAddress" JSONB,
-        "billingAddress" JSONB,
-        "primaryContact" JSONB,
-        "financeContact" JSONB,
-        "bankDetails" JSONB,
-        "panVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
-        "gstVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
-        "verificationLogs" JSONB DEFAULT '{}'::jsonb,
-        status VARCHAR(50) DEFAULT 'Pending',
-        comments TEXT,
-        "googleFormResponseId" VARCHAR(255),
-        "panFileUrl" TEXT,
-        "gstFileUrl" TEXT,
-        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createTableQuery);
-    // Safely add columns if the table was created in a previous version
-    await pool.query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS "googleFormResponseId" VARCHAR(255);');
-    await pool.query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS "panFileUrl" TEXT;');
-    await pool.query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS "gstFileUrl" TEXT;');
-    console.log('PostgreSQL vendors table checked/initialized successfully.');
-
-    // Initialize users table
-    const createUsersTableQuery = `
-      CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY,
-        username VARCHAR(150) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        salt VARCHAR(100) NOT NULL,
-        role VARCHAR(50) DEFAULT 'Approver',
-        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createUsersTableQuery);
-    console.log('PostgreSQL users table checked/initialized successfully.');
+    await dbService.initializeDatabaseSchema(pool);
+    console.log('PostgreSQL database schema checked/initialized successfully via DB Service.');
 
     // Seed default administrator if users table is empty
     const usersCheck = await pool.query('SELECT COUNT(*) FROM users');
@@ -96,7 +117,7 @@ const initializeDatabase = async () => {
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
       const adminId = uuidv4();
       const salt = crypto.randomBytes(16).toString('hex');
-      const hashedPassword = hashPassword(adminPassword, salt);
+      const hashedPassword = await hashPassword(adminPassword);
       
       await pool.query(
         'INSERT INTO users (id, username, password, salt, role) VALUES ($1, $2, $3, $4, $5)',
@@ -182,17 +203,48 @@ const verifyTaxIdentifiers = async (pan, gstin, legalName) => {
 
 // --- Authentication & Security Middleware ---
 
-const authenticateAdmin = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Unauthorized access. No token provided.' });
+const extractToken = (req) => {
+  if (req.query && req.query.token) {
+    return req.query.token;
   }
-  const token = authHeader.split(' ')[1];
+  if (req.cookies && req.cookies.token) {
+    return req.cookies.token;
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+  return null;
+};
+
+const authenticateAdmin = (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized access. No session token provided.' });
+  }
   
   // Legacy compatibility: check if it's the static admin token
   if (token === 'admin-session-token') {
     req.user = { username: process.env.ADMIN_USERNAME || 'admin', role: 'Admin' };
     return next();
+  }
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role === 'Vendor') {
+      return res.status(403).json({ message: 'Forbidden access. Vendors cannot access administrative resources.' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Unauthorized access. Invalid or expired token.' });
+  }
+};
+
+const authenticateUser = (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized access. No session token provided.' });
   }
   
   try {
@@ -214,7 +266,7 @@ const requireAdmin = (req, res, next) => {
 // --- API Endpoints ---
 
 // 0. Login Handler (Dynamic Database Validation)
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password are required.' });
@@ -227,105 +279,131 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = result.rows[0];
-    const hashedPassword = hashPassword(password, user.salt);
-    if (hashedPassword !== user.password) {
+    let passwordIsValid = false;
+    let shouldUpgradeHash = false;
+
+    // Check if stored password uses bcrypt hashing
+    if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+      passwordIsValid = await bcrypt.compare(password, user.password);
+    } else {
+      // Fallback: check legacy SHA-256 format
+      const legacyHashed = legacyHashPassword(password, user.salt);
+      if (legacyHashed === user.password) {
+        passwordIsValid = true;
+        shouldUpgradeHash = true;
+      }
+    }
+
+    if (!passwordIsValid) {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
 
+    // Auto-upgrade legacy hash to Bcrypt
+    if (shouldUpgradeHash) {
+      try {
+        const newBcryptHash = await hashPassword(password);
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newBcryptHash, user.id]);
+        console.log(`[SECURITY MIGRATION] Upgraded credentials for user "${user.username}" to Bcrypt format.`);
+      } catch (upgradeErr) {
+        console.error('Failed to automatically migrate password hash to Bcrypt:', upgradeErr);
+      }
+    }
+
+    const resetRequired = !!user.passwordResetRequired;
+
     // Generate signed stateless JSON Web Token (JWT)
     const token = jwt.sign(
-      { username: user.username, role: user.role },
+      { username: user.username, role: user.role, passwordResetRequired: resetRequired },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '1h' }
     );
 
-    res.json({ token, username: user.username, role: user.role });
+    // Set secure HttpOnly cookie
+    const isHttps = req.get('origin')?.startsWith('https') || false;
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: isHttps,
+      sameSite: isHttps ? 'none' : 'lax',
+      maxAge: 3600000 // 1 hour
+    });
+
+    res.json({ token, username: user.username, role: user.role, passwordResetRequired: resetRequired });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Authentication server error.' });
   }
 });
 
+// 0.5. Change password / Force Reset first login
+app.post('/api/auth/change-password', authenticateUser, async (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || !newPassword.trim()) {
+    return res.status(400).json({ message: 'New password is required.' });
+  }
+
+  const username = req.user.username;
+
+  try {
+    const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const user = userCheck.rows[0];
+
+    // Generate new salt and hashed password
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = await hashPassword(newPassword.trim());
+
+    // Update password, salt, and reset required flag in DB
+    await pool.query(
+      'UPDATE users SET password = $1, salt = $2, "passwordResetRequired" = $3 WHERE username = $4',
+      [hashedPassword, salt, false, username]
+    );
+
+    // Sign and return a fresh token without the resetRequired flag set to true
+    const newToken = jwt.sign(
+      { username: user.username, role: user.role, passwordResetRequired: false },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Set secure HttpOnly cookie
+    const isHttps = req.get('origin')?.startsWith('https') || false;
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: isHttps,
+      sameSite: isHttps ? 'none' : 'lax',
+      maxAge: 3600000 // 1 hour
+    });
+
+    res.json({
+      success: true,
+      message: 'Password updated successfully.',
+      token: newToken
+    });
+  } catch (error) {
+    console.error('Error changing user password:', error);
+    res.status(500).json({ message: 'Internal server error changing password.' });
+  }
+});
+
+// 0.7. Logout Handler
+app.post('/api/auth/logout', (req, res) => {
+  const isHttps = req.get('origin')?.startsWith('https') || false;
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: isHttps ? 'none' : 'lax'
+  });
+  res.json({ success: true, message: 'Logged out successfully.' });
+});
+
 // 1. Get all vendors (with server-side pagination, search, and filters)
 app.get('/api/vendors', authenticateAdmin, async (req, res) => {
   try {
-    // 1. Get global stats for the dashboard summary
-    const statsResult = await pool.query('SELECT status, COUNT(*) FROM vendors GROUP BY status');
-    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
-    statsResult.rows.forEach(row => {
-      const count = parseInt(row.count, 10);
-      stats.total += count;
-      if (row.status === 'Pending') stats.pending = count;
-      if (row.status === 'Approved') stats.approved = count;
-      if (row.status === 'Rejected') stats.rejected = count;
-    });
-
-    const page = parseInt(req.query.page, 10);
-    const limit = parseInt(req.query.limit, 10) || 10;
-
-    // Backward compatibility: if page is not specified, return all records
-    if (isNaN(page) || page < 1) {
-      const result = await pool.query('SELECT * FROM vendors ORDER BY "createdAt" DESC');
-      return res.json(result.rows);
-    }
-
-    const search = req.query.search || '';
-    const status = req.query.status || 'All';
-    const entityType = req.query.entityType || 'All';
-
-    let queryStr = 'SELECT * FROM vendors WHERE 1=1';
-    let countStr = 'SELECT COUNT(*) FROM vendors WHERE 1=1';
-    const queryParams = [];
-    const countParams = [];
-    let paramIdx = 1;
-
-    if (search.trim()) {
-      const searchPattern = `%${search.toLowerCase().trim()}%`;
-      const searchClause = ` AND (LOWER("legalName") LIKE $${paramIdx} OR LOWER(pan) LIKE $${paramIdx} OR LOWER(gstin) LIKE $${paramIdx} OR LOWER("tradeName") LIKE $${paramIdx})`;
-      queryStr += searchClause;
-      countStr += searchClause;
-      queryParams.push(searchPattern);
-      countParams.push(searchPattern);
-      paramIdx++;
-    }
-
-    if (status !== 'All') {
-      const statusClause = ` AND status = $${paramIdx}`;
-      queryStr += statusClause;
-      countStr += statusClause;
-      queryParams.push(status);
-      countParams.push(status);
-      paramIdx++;
-    }
-
-    if (entityType !== 'All') {
-      const entityClause = ` AND "entityType" = $${paramIdx}`;
-      queryStr += entityClause;
-      countStr += entityClause;
-      queryParams.push(entityType);
-      countParams.push(entityType);
-      paramIdx++;
-    }
-
-    // Get total count of filtered vendors
-    const countResult = await pool.query(countStr, countParams);
-    const totalFiltered = parseInt(countResult.rows[0].count, 10);
-
-    // Add Order by, Limit, and Offset to query string
-    queryStr += ` ORDER BY "createdAt" DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
-    const offset = (page - 1) * limit;
-    queryParams.push(limit, offset);
-
-    const listResult = await pool.query(queryStr, queryParams);
-
-    res.json({
-      vendors: listResult.rows,
-      total: totalFiltered,
-      page,
-      limit,
-      totalPages: Math.ceil(totalFiltered / limit) || 1,
-      stats
-    });
+    const result = await dbService.getPaginatedVendors(pool, req.query);
+    res.json(result);
   } catch (error) {
     console.error('Error fetching vendors:', error);
     res.status(500).json({ message: 'Internal server error while fetching vendors.' });
@@ -335,74 +413,187 @@ app.get('/api/vendors', authenticateAdmin, async (req, res) => {
 // 2. Get single vendor details
 app.get('/api/vendors/:id', authenticateAdmin, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM vendors WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) {
+    const vendor = await dbService.getVendorById(pool, req.params.id);
+    if (!vendor) {
       return res.status(404).json({ message: 'Vendor not found' });
     }
-    res.json(result.rows[0]);
+    res.json(vendor);
   } catch (error) {
     console.error('Error fetching vendor details:', error);
     res.status(500).json({ message: 'Internal server error while retrieving vendor.' });
   }
 });
 
-// 3. Create a new vendor (From custom React UI Form)
-app.post('/api/vendors', async (req, res) => {
-  const newVendorData = req.body;
+// Public route to retrieve binary files from PostgreSQL
+app.get('/api/vendors/files/:vendorId/:fileKey', async (req, res) => {
+  const { vendorId, fileKey } = req.params;
+  
+  // Map keys to DB column names
+  const keyMap = {
+    pan: { data: 'panFileData', name: 'panFileName', mimetype: 'panFileMimetype' },
+    gst: { data: 'gstFileData', name: 'gstFileName', mimetype: 'gstFileMimetype' },
+    reg: { data: 'regFileData', name: 'regFileName', mimetype: 'regFileMimetype' },
+    cheque: { data: 'chequeFileData', name: 'chequeFileName', mimetype: 'chequeFileMimetype' },
+    iso: { data: 'isoFileData', name: 'isoFileName', mimetype: 'isoFileMimetype' }
+  };
 
-  // Basic server-side validation
-  if (!newVendorData.legalName || !newVendorData.pan || !newVendorData.primaryContact?.email) {
-    return res.status(400).json({ message: 'Legal Name, PAN, and Primary Email are required.' });
+  const columns = keyMap[fileKey];
+  if (!columns) {
+    return res.status(400).json({ message: 'Invalid file key.' });
   }
 
-  const id = uuidv4();
-  const legalName = newVendorData.legalName;
-  const tradeName = newVendorData.tradeName || '';
-  const entityType = newVendorData.entityType || 'Proprietorship';
-  const dateOfIncorporation = newVendorData.dateOfIncorporation || '';
-  const cin = newVendorData.cin || '';
-  const llpin = newVendorData.llpin || '';
-  const pan = newVendorData.pan.toUpperCase().trim();
-  const gstStatus = newVendorData.gstStatus || 'Unregistered';
-  const gstin = newVendorData.gstin ? newVendorData.gstin.toUpperCase().trim() : '';
-  const msmeStatus = newVendorData.msmeStatus || 'No';
-  const udyamNumber = newVendorData.udyamNumber || '';
-  const registeredAddress = newVendorData.registeredAddress || {};
-  const billingAddress = newVendorData.billingAddress || {};
-  const primaryContact = newVendorData.primaryContact || {};
-  const financeContact = newVendorData.financeContact || {};
-  const bankDetails = newVendorData.bankDetails || {};
-  const status = 'Pending';
-  const comments = 'Self-onboarded via portal. Awaiting review.';
-  const createdAt = new Date().toISOString();
-  const updatedAt = new Date().toISOString();
-
-  // Run mock Tax Identifier Verification
-  const verification = await verifyTaxIdentifiers(pan, gstin, legalName);
-
   try {
-    const query = `
-      INSERT INTO vendors (
-        id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan,
-        "gstStatus", gstin, "msmeStatus", "udyamNumber", "registeredAddress", "billingAddress",
-        "primaryContact", "financeContact", "bankDetails", "panVerificationStatus", "gstVerificationStatus",
-        "verificationLogs", status, comments, "createdAt", "updatedAt"
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
-      ) RETURNING *
-    `;
-    const values = [
-      id, legalName, tradeName, entityType, dateOfIncorporation, cin, llpin, pan,
-      gstStatus, gstin, msmeStatus, udyamNumber, JSON.stringify(registeredAddress), JSON.stringify(billingAddress),
-      JSON.stringify(primaryContact), JSON.stringify(financeContact), JSON.stringify(bankDetails),
-      verification.panVerificationStatus, verification.gstVerificationStatus, JSON.stringify(verification.verificationLogs),
-      status, comments, createdAt, updatedAt
-    ];
-    const result = await pool.query(query, values);
-    res.status(201).json(result.rows[0]);
+    const query = `SELECT "${columns.data}" as file_data, "${columns.name}" as file_name, "${columns.mimetype}" as mime_type FROM vendors WHERE id = $1`;
+    const result = await pool.query(query, [vendorId]);
+
+    if (result.rows.length === 0 || !result.rows[0].file_data) {
+      return res.status(404).json({ message: 'File not found.' });
+    }
+
+    const { file_data, file_name, mime_type } = result.rows[0];
+
+    // Set correct headers
+    res.set('Content-Type', mime_type || 'application/octet-stream');
+    res.set('Content-Disposition', `inline; filename="${encodeURIComponent(file_name || 'download')}"`);
+    res.send(file_data);
   } catch (error) {
-    console.error('Error inserting vendor into DB:', error);
-    res.status(500).json({ message: 'Failed to write to database' });
+    console.error('Error serving file from DB:', error);
+    res.status(500).json({ message: 'Internal server error serving file.' });
+  }
+});
+
+// 3. Create a new vendor (From custom React UI Form - Multi-file multipart upload)
+app.post('/api/vendors', upload.fields([
+  { name: 'panFile', maxCount: 1 },
+  { name: 'gstFile', maxCount: 1 },
+  { name: 'regFile', maxCount: 1 },
+  { name: 'chequeFile', maxCount: 1 },
+  { name: 'isoFile', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const body = req.body;
+    
+    // Parse nested object strings sent as multipart/form-data
+    const parseField = (field) => {
+      if (!field) return {};
+      if (typeof field === 'string') {
+        try { return JSON.parse(field); } catch (e) { return {}; }
+      }
+      return field;
+    };
+
+    const registeredAddress = parseField(body.registeredAddress);
+    const billingAddress = parseField(body.billingAddress);
+    const primaryContact = parseField(body.primaryContact);
+    const financeContact = parseField(body.financeContact);
+    const bankDetails = parseField(body.bankDetails);
+
+    const legalName = body.legalName;
+    const pan = body.pan ? body.pan.toUpperCase().trim() : '';
+    const primaryEmail = primaryContact.email || body.email || '';
+
+    if (!legalName || !pan || !primaryEmail) {
+      return res.status(400).json({ message: 'Legal Name, PAN, and Email Address are required.' });
+    }
+
+    const gstin = body.gstin ? body.gstin.toUpperCase().trim() : '';
+
+    // Run mock Tax Identifier Verification
+    const verification = await verifyTaxIdentifiers(pan, gstin, legalName);
+
+    // Pre-generate the vendor UUID
+    const vendorId = uuidv4();
+
+    // Resolve file upload URLs (custom DB file retriever endpoints)
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    const hasPanFile = req.files && req.files.panFile && req.files.panFile[0];
+    const hasGstFile = req.files && req.files.gstFile && req.files.gstFile[0];
+    const hasRegFile = req.files && req.files.regFile && req.files.regFile[0];
+    const hasChequeFile = req.files && req.files.chequeFile && req.files.chequeFile[0];
+    const hasIsoFile = req.files && req.files.isoFile && req.files.isoFile[0];
+
+    const getExt = (filesObj, fieldName) => {
+      const file = filesObj && filesObj[fieldName] && filesObj[fieldName][0];
+      return file ? path.extname(file.originalname).toLowerCase() : '';
+    };
+
+    const panFileUrl = hasPanFile ? `${baseUrl}/api/vendors/files/${vendorId}/pan?ext=${getExt(req.files, 'panFile')}` : null;
+    const gstFileUrl = hasGstFile ? `${baseUrl}/api/vendors/files/${vendorId}/gst?ext=${getExt(req.files, 'gstFile')}` : null;
+    const regFileUrl = hasRegFile ? `${baseUrl}/api/vendors/files/${vendorId}/reg?ext=${getExt(req.files, 'regFile')}` : null;
+    const chequeFileUrl = hasChequeFile ? `${baseUrl}/api/vendors/files/${vendorId}/cheque?ext=${getExt(req.files, 'chequeFile')}` : null;
+    const isoFileUrl = hasIsoFile ? `${baseUrl}/api/vendors/files/${vendorId}/iso?ext=${getExt(req.files, 'isoFile')}` : null;
+
+    // Attach extra documents inside verificationLogs
+    verification.verificationLogs.uploadedDocuments = {
+      regFileUrl,
+      chequeFileUrl,
+      isoFileUrl
+    };
+
+    // Attach metadata
+    verification.verificationLogs.metadata = {
+      website: body.website || '',
+      isoCertified: body.isoCertified || 'No',
+      otherCertifications: body.otherCertifications || ''
+    };
+
+    const vendorData = {
+      id: vendorId,
+      legalName,
+      tradeName: body.tradeName || '',
+      entityType: body.entityType || 'Proprietorship',
+      dateOfIncorporation: body.dateOfIncorporation || '',
+      cin: body.cin || '',
+      llpin: body.llpin || '',
+      pan,
+      gstStatus: body.gstStatus || 'Unregistered',
+      gstin,
+      msmeStatus: body.msmeStatus || 'No',
+      udyamNumber: body.udyamNumber || '',
+      registeredAddress,
+      billingAddress,
+      primaryContact: {
+        ...primaryContact,
+        email: primaryEmail
+      },
+      financeContact,
+      bankDetails,
+      panVerificationStatus: verification.panVerificationStatus,
+      gstVerificationStatus: verification.gstVerificationStatus,
+      verificationLogs: verification.verificationLogs,
+      status: 'Pending',
+      comments: 'Self-onboarded via portal. Awaiting review.',
+      panFileUrl,
+      gstFileUrl,
+      
+      // Pass binary data fields to PostgreSQL DB service
+      panFileData: hasPanFile ? req.files.panFile[0].buffer : null,
+      panFileName: hasPanFile ? req.files.panFile[0].originalname : null,
+      panFileMimetype: hasPanFile ? req.files.panFile[0].mimetype : null,
+
+      gstFileData: hasGstFile ? req.files.gstFile[0].buffer : null,
+      gstFileName: hasGstFile ? req.files.gstFile[0].originalname : null,
+      gstFileMimetype: hasGstFile ? req.files.gstFile[0].mimetype : null,
+
+      regFileData: hasRegFile ? req.files.regFile[0].buffer : null,
+      regFileName: hasRegFile ? req.files.regFile[0].originalname : null,
+      regFileMimetype: hasRegFile ? req.files.regFile[0].mimetype : null,
+
+      chequeFileData: hasChequeFile ? req.files.chequeFile[0].buffer : null,
+      chequeFileName: hasChequeFile ? req.files.chequeFile[0].originalname : null,
+      chequeFileMimetype: hasChequeFile ? req.files.chequeFile[0].mimetype : null,
+
+      isoFileData: hasIsoFile ? req.files.isoFile[0].buffer : null,
+      isoFileName: hasIsoFile ? req.files.isoFile[0].originalname : null,
+      isoFileMimetype: hasIsoFile ? req.files.isoFile[0].mimetype : null
+    };
+
+    const newVendor = await dbService.createVendor(pool, vendorData);
+    res.status(201).json(newVendor);
+  } catch (error) {
+    console.error('Error in self-onboarding:', error);
+    res.status(500).json({ message: 'Internal server error during vendor onboarding.' });
   }
 });
 
@@ -416,112 +607,22 @@ app.patch('/api/vendors/:id/status', authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const selectResult = await pool.query('SELECT * FROM vendors WHERE id = $1', [req.params.id]);
-    if (selectResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Vendor not found' });
-    }
-
-    const currentVendor = selectResult.rows[0];
-    const updatedComments = comments || currentVendor.comments;
-    const updatedAt = new Date().toISOString();
-
-    const updateQuery = `
-      UPDATE vendors
-      SET status = $1, comments = $2, "updatedAt" = $3
-      WHERE id = $4
-      RETURNING *
-    `;
-    const updateResult = await pool.query(updateQuery, [status, updatedComments, updatedAt, req.params.id]);
-    res.json(updateResult.rows[0]);
+    const updatedVendor = await dbService.updateVendorStatus(pool, req.params.id, status, comments);
+    res.json(updatedVendor);
   } catch (error) {
-    console.error('Error updating vendor status:', error);
-    res.status(500).json({ message: 'Failed to update database' });
+    console.error('Error updating vendor status:', error, req.params.id);
+    res.status(500).json({ message: error.message || 'Failed to update database' });
   }
 });
 
 // 4.5. Update vendor details (From Admin Dashboard - Admin Only)
 app.put('/api/vendors/:id', authenticateAdmin, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const {
-    legalName,
-    tradeName,
-    entityType,
-    dateOfIncorporation,
-    cin,
-    llpin,
-    pan,
-    gstin,
-    msmeStatus,
-    udyamNumber,
-    registeredAddress,
-    billingAddress,
-    primaryContact,
-    financeContact,
-    bankDetails,
-    verificationLogs,
-    googleFormResponseId,
-    panFileUrl,
-    gstFileUrl
-  } = req.body;
-
   try {
-    const query = `
-      UPDATE vendors
-      SET 
-        "legalName" = $1,
-        "tradeName" = $2,
-        "entityType" = $3,
-        "dateOfIncorporation" = $4,
-        cin = $5,
-        llpin = $6,
-        pan = $7,
-        gstin = $8,
-        "msmeStatus" = $9,
-        "udyamNumber" = $10,
-        "registeredAddress" = $11,
-        "billingAddress" = $12,
-        "primaryContact" = $13,
-        "financeContact" = $14,
-        "bankDetails" = $15,
-        "verificationLogs" = $16,
-        "googleFormResponseId" = $17,
-        "panFileUrl" = $18,
-        "gstFileUrl" = $19,
-        "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $20
-      RETURNING *
-    `;
-    const values = [
-      legalName,
-      tradeName,
-      entityType,
-      dateOfIncorporation,
-      cin,
-      llpin,
-      pan,
-      gstin,
-      msmeStatus,
-      udyamNumber,
-      typeof registeredAddress === 'string' ? registeredAddress : JSON.stringify(registeredAddress),
-      typeof billingAddress === 'string' ? billingAddress : JSON.stringify(billingAddress),
-      typeof primaryContact === 'string' ? primaryContact : JSON.stringify(primaryContact),
-      typeof financeContact === 'string' ? financeContact : JSON.stringify(financeContact),
-      typeof bankDetails === 'string' ? bankDetails : JSON.stringify(bankDetails),
-      typeof verificationLogs === 'string' ? verificationLogs : JSON.stringify(verificationLogs || {}),
-      googleFormResponseId || null,
-      panFileUrl || null,
-      gstFileUrl || null,
-      id
-    ];
-
-    const result = await pool.query(query, values);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Vendor not found' });
-    }
-    res.json(result.rows[0]);
+    const updatedVendor = await dbService.updateVendorDetails(pool, req.params.id, req.body);
+    res.json(updatedVendor);
   } catch (error) {
-    console.error('Error updating vendor details:', error);
-    res.status(500).json({ message: 'Failed to update vendor details.' });
+    console.error('Error updating vendor details:', error, req.params.id);
+    res.status(500).json({ message: 'Failed to update database' });
   }
 });
 
@@ -558,7 +659,7 @@ app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
     return res.status(400).json({ message: 'Username, password, and role are required.' });
   }
   
-  const validRoles = ['Admin', 'Approver'];
+  const validRoles = ['Admin', 'Approver', 'Vendor'];
   if (!validRoles.includes(role)) {
     return res.status(400).json({ message: 'Invalid role selection.' });
   }
@@ -571,7 +672,7 @@ app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
 
     const id = uuidv4();
     const salt = crypto.randomBytes(16).toString('hex');
-    const hashedPassword = hashPassword(password, salt);
+    const hashedPassword = await hashPassword(password);
 
     await pool.query(
       'INSERT INTO users (id, username, password, salt, role) VALUES ($1, $2, $3, $4, $5)',
@@ -582,6 +683,124 @@ app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error creating user:', error);
     res.status(500).json({ message: 'Failed to create user.' });
+  }
+});
+
+// Invite a vendor (Admin Only)
+app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ message: 'Vendor email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  
+  // Basic email format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return res.status(400).json({ message: 'Invalid email address format.' });
+  }
+
+  try {
+    // Check if user already exists
+    const checkResult = await pool.query('SELECT id FROM users WHERE username = $1', [cleanEmail]);
+    if (checkResult.rows.length > 0) {
+      return res.status(409).json({ message: 'A user with this email address already exists.' });
+    }
+
+    // Generate random 10 character password
+    const generateRandomPassword = () => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$';
+      let pass = '';
+      for (let i = 0; i < 10; i++) {
+        pass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return pass;
+    };
+    const generatedPassword = generateRandomPassword();
+
+    // Create user with 'Vendor' role in DB
+    const id = uuidv4();
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = await hashPassword(generatedPassword);
+
+    await pool.query(
+      'INSERT INTO users (id, username, password, salt, role, "passwordResetRequired") VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, cleanEmail, hashedPassword, salt, 'Vendor', true]
+    );
+
+    // Build the login portal link pointing to the requesting client origin
+    const portalUrl = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+
+    // Dispatch email
+    let emailSent = false;
+    let emailMessage = 'Vendor user account created, but SMTP is not configured. Credentials printed to server logs.';
+
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = process.env.SMTP_PORT || 587;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    console.log(`[INVITATION CREATED] Vendor Email: ${cleanEmail} | Temporary Password: ${generatedPassword}`);
+
+    if (smtpHost && smtpUser && smtpPass) {
+      try {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: parseInt(smtpPort, 10),
+          secure: parseInt(smtpPort, 10) === 465, // true for 465, false for other ports
+          auth: {
+            user: smtpUser,
+            pass: smtpPass
+          }
+        });
+
+        const mailOptions = {
+          from: `"VK18 Vendor Portal" <${smtpUser}>`,
+          to: cleanEmail,
+          subject: 'Welcome to VK18 Vendor Portal - Onboarding Invitation',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+              <h2 style="color: #4f46e5; margin-bottom: 20px;">VK18 Pvt Ltd - Vendor Onboarding</h2>
+              <p>Hello,</p>
+              <p>You have been invited to register as a partner/vendor on the VK18 Portal.</p>
+              <p>Please use the credentials below to log in and fill out the Vendor Registration Form:</p>
+              
+              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
+                <p style="margin: 5px 0;"><strong>Portal URL:</strong> <a href="${portalUrl}" style="color: #4f46e5; text-decoration: underline;">${portalUrl}</a></p>
+                <p style="margin: 5px 0;"><strong>Username (Email):</strong> <code>${cleanEmail}</code></p>
+                <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code>${generatedPassword}</code></p>
+              </div>
+
+              <p style="color: #64748b; font-size: 12px; margin-top: 30px;">
+                Note: This is a system generated email. For security reasons, please change your password after logging in.
+              </p>
+            </div>
+          `
+        };
+
+        await transporter.sendMail(mailOptions);
+        emailSent = true;
+        emailMessage = 'Vendor registered and invitation email sent successfully.';
+      } catch (mailError) {
+        console.error('SMTP Error dispatching vendor invitation email:', mailError);
+        emailMessage = 'Vendor registered in database, but SMTP server failed to send email. Check credentials below.';
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: emailMessage,
+      emailSent,
+      username: cleanEmail,
+      password: generatedPassword,
+      portalUrl
+    });
+
+  } catch (error) {
+    console.error('Error executing vendor invitation:', error);
+    res.status(500).json({ message: 'Internal server error while inviting vendor.' });
   }
 });
 

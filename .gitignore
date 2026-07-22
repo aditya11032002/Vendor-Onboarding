@@ -11,3 +11,7 @@ frontend/.env
 # Build outputs
 dist/
 frontend/dist/
+
+# Uploaded files
+uploads/
+backend/uploads/

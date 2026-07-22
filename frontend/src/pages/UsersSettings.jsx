@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Shield, UserX, AlertCircle, CheckCircle2, User, Key, ShieldCheck } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, apiFetch } from '../config';
 
 export default function UsersSettings({ token }) {
   const [users, setUsers] = useState([]);
@@ -19,7 +19,7 @@ export default function UsersSettings({ token }) {
     try {
       setLoading(true);
       setError('');
-      const res = await fetch(`${API_BASE_URL}/api/users`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/users`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -54,7 +54,7 @@ export default function UsersSettings({ token }) {
     setSuccess('');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/users`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,7 +94,7 @@ export default function UsersSettings({ token }) {
     setSuccess('');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -191,10 +191,11 @@ export default function UsersSettings({ token }) {
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white border border-slate-200 text-slate-805 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:border-indigo-500"
                 >
                   <option value="Approver">Approver</option>
                   <option value="Admin">Admin (Full Access)</option>
+                  <option value="Vendor">Vendor (Access to Vendor Form only)</option>
                 </select>
               </div>
             </div>

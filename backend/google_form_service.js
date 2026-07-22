@@ -1,3 +1,4 @@
+const dbService = require('./vendor_db_service');
 const { v4: uuidv4 } = require('uuid');
 
 // Mock tax identifier verification engine
@@ -169,25 +170,37 @@ async function processGoogleFormWebhook(formPayload, pool) {
   const panFileUrl = panFileId ? `https://drive.google.com/file/d/${panFileId}/view` : (formPayload.panFileUrl || null);
   const gstFileUrl = gstFileId ? `https://drive.google.com/file/d/${gstFileId}/view` : (formPayload.gstFileUrl || null);
 
-  const query = `
-    INSERT INTO vendors (
-      id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan,
-      "gstStatus", gstin, "msmeStatus", "udyamNumber", "registeredAddress", "billingAddress",
-      "primaryContact", "financeContact", "bankDetails", "panVerificationStatus", "gstVerificationStatus",
-      "verificationLogs", status, comments, "googleFormResponseId", "panFileUrl", "gstFileUrl", "createdAt", "updatedAt"
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
-    ) RETURNING *
-  `;
-  const values = [
-    id, legalName, tradeName, entityType, dateOfIncorporation, cin, llpin, pan,
-    gstStatus, gstin, msmeStatus, udyamNumber, JSON.stringify(registeredAddress), JSON.stringify(billingAddress),
-    JSON.stringify(primaryContact), JSON.stringify(financeContact), JSON.stringify(bankDetails),
-    verification.panVerificationStatus, verification.gstVerificationStatus, JSON.stringify(verification.verificationLogs),
-    status, comments, googleFormResponseId, panFileUrl, gstFileUrl, createdAt, updatedAt
-  ];
+  const newVendorData = {
+    id,
+    legalName,
+    tradeName,
+    entityType,
+    dateOfIncorporation,
+    cin,
+    llpin,
+    pan,
+    gstStatus,
+    gstin,
+    msmeStatus,
+    udyamNumber,
+    registeredAddress,
+    billingAddress,
+    primaryContact,
+    financeContact,
+    bankDetails,
+    panVerificationStatus: verification.panVerificationStatus,
+    gstVerificationStatus: verification.gstVerificationStatus,
+    verificationLogs: verification.verificationLogs,
+    status,
+    comments,
+    googleFormResponseId,
+    panFileUrl,
+    gstFileUrl,
+    createdAt,
+    updatedAt
+  };
 
-  await pool.query(query, values);
+  await dbService.createVendor(pool, newVendorData);
   return { success: true, vendorId: id };
 }
 

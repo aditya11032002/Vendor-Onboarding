@@ -3,7 +3,9 @@ import VendorForm from './pages/VendorForm';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import UsersSettings from './pages/UsersSettings';
+import ResetPassword from './pages/ResetPassword';
 import { ShieldCheck, UserPlus, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { API_BASE_URL, apiFetch } from './config';
 
 export default function App() {
   // Simple state-based routing. Defaults to "admin"
@@ -17,34 +19,104 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [adminUser, setAdminUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [passwordResetRequired, setPasswordResetRequired] = useState(false);
 
 
-  const handleLoginSuccess = (newToken, username, role) => {
+  const handleLoginSuccess = (newToken, username, role, resetRequired) => {
     localStorage.setItem('admin_token', newToken);
     localStorage.setItem('admin_username', username);
     setToken(newToken);
     setAdminUser(username);
     setUserRole(role);
+    setPasswordResetRequired(!!resetRequired);
+    if (role === 'Vendor') {
+      setCurrentPage('form');
+      window.location.hash = '/form';
+    } else {
+      setCurrentPage('admin');
+      window.location.hash = '/admin';
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await apiFetch(`${API_BASE_URL}/api/auth/logout`, { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to log out on server:', err);
+    }
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_username');
     setToken(null);
     setAdminUser(null);
     setUserRole(null);
+    setPasswordResetRequired(false);
   };
 
-  // Force light mode on document root
+  // Idle Auto-Logout timer (15 minutes of inactivity)
+  useEffect(() => {
+    if (!token) return;
+    
+    const TIMEOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+    let timeoutId;
+    
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLogout();
+        alert('You have been logged out due to inactivity.');
+      }, TIMEOUT_DURATION);
+    };
+    
+    const activityEvents = ['mousemove', 'keydown', 'scroll', 'click'];
+    activityEvents.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+    
+    resetTimer();
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [token]);
+
+  // Load token on mount & force light mode on document root
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('dark');
+    // root.classList.remove('dark');
     localStorage.setItem('theme', 'light');
+
+    const savedToken = localStorage.getItem('admin_token');
+    const savedUser = localStorage.getItem('admin_username');
+    if (savedToken) {
+      try {
+        const payloadBase64 = savedToken.split('.')[1];
+        const payloadDecoded = JSON.parse(atob(payloadBase64));
+        setToken(savedToken);
+        setAdminUser(savedUser || payloadDecoded.username);
+        setUserRole(payloadDecoded.role);
+        setPasswordResetRequired(!!payloadDecoded.passwordResetRequired);
+        if (payloadDecoded.role === 'Vendor') {
+          setCurrentPage('form');
+          window.location.hash = '/form';
+        }
+      } catch (e) {
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_username');
+      }
+    }
   }, []);
 
   // Handle URL hash changes for back-button compatibility
   useEffect(() => {
     const handleHashChange = () => {
+      if (userRole === 'Vendor') {
+        setCurrentPage('form');
+        window.location.hash = '/form';
+        return;
+      }
       const hash = window.location.hash;
       if (hash === '#/form') {
         setCurrentPage('form');
@@ -60,9 +132,14 @@ export default function App() {
     handleHashChange();
 
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [userRole]);
 
   const navigateTo = (page) => {
+    if (userRole === 'Vendor') {
+      setCurrentPage('form');
+      window.location.hash = '/form';
+      return;
+    }
     if (page === 'form') {
       window.location.hash = '/form';
     } else if (page === 'users') {
@@ -80,6 +157,22 @@ export default function App() {
         <div className="w-full">
           <Login onLoginSuccess={handleLoginSuccess} />
         </div>
+      </div>
+    );
+  }
+
+  // Force Password Reset overlay
+  if (passwordResetRequired) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4">
+        <ResetPassword 
+          token={token} 
+          username={adminUser}
+          onSuccess={(newToken) => {
+            handleLoginSuccess(newToken, adminUser, userRole, false);
+          }}
+          onLogout={handleLogout}
+        />
       </div>
     );
   }
@@ -111,23 +204,25 @@ export default function App() {
 
           {/* Navigation Options */}
           <nav className="p-3 space-y-1">
-            <button
-              onClick={() => navigateTo('admin')}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'admin'
+            {userRole !== 'Vendor' && (
+              <button
+                onClick={() => navigateTo('admin')}
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'admin'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              title="Admin Panel"
-            >
-              <ShieldCheck className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>Admin Panel</span>}
-            </button>
+                  }`}
+                title="Admin Panel"
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                {!sidebarCollapsed && <span>Admin Panel</span>}
+              </button>
+            )}
 
             <button
               onClick={() => navigateTo('form')}
               className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'form'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               title="Vendor Form"
             >
@@ -139,8 +234,8 @@ export default function App() {
               <button
                 onClick={() => navigateTo('users')}
                 className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'users'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 title="User Settings"
               >

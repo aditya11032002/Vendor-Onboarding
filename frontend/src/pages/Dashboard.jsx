@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Search, Filter, CheckCircle2, XCircle, AlertCircle, Eye,
-  Building2, CreditCard, X, MapPin, User, FileText, ArrowUpDown, ShieldCheck
+  Building2, CreditCard, X, MapPin, User, FileText, ArrowUpDown, ShieldCheck,
+  ZoomIn, ZoomOut, RotateCcw, UserPlus
 } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, apiFetch } from '../config';
 
 export default function Dashboard({ token, userRole, onLogout }) {
   const [vendors, setVendors] = useState([]);
@@ -26,6 +27,95 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [commentInput, setCommentInput] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [activeFileUrl, setActiveFileUrl] = useState('');
+  const [activeFileKey, setActiveFileKey] = useState('');
+  const [imgScale, setImgScale] = useState(1);
+
+  useEffect(() => {
+    setImgScale(1);
+  }, [activeFileUrl]);
+
+  // Invite Vendor Modal State
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState(null);
+
+  // Detail Drawer Fetching State
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const handleSelectVendor = async (vendorId) => {
+    setDetailLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${vendorId}`);
+      if (res.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to retrieve vendor details.');
+      const fullVendor = await res.json();
+      
+      setSelectedVendor(fullVendor);
+      setCommentInput('');
+      
+      const defaultUrl = fullVendor.panFileUrl || 
+                         fullVendor.gstFileUrl || 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.regFileUrl) || 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.chequeFileUrl) || 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.isoFileUrl) || '';
+      const defaultKey = fullVendor.panFileUrl ? 'pan' : 
+                         fullVendor.gstFileUrl ? 'gst' : 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.regFileUrl) ? 'reg' : 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.chequeFileUrl) ? 'cheque' : 
+                         (fullVendor.verificationLogs?.uploadedDocuments && fullVendor.verificationLogs.uploadedDocuments.isoFileUrl) ? 'iso' : '';
+      setActiveFileUrl(defaultUrl);
+      setActiveFileKey(defaultKey);
+    } catch (err) {
+      alert(`Error loading vendor details: ${err.message}`);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const getAuthorizedUrl = (url) => {
+    if (!url) return '';
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}token=${token}`;
+  };
+
+  const handleInviteVendor = async (e) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+
+    setInviteLoading(true);
+    setInviteError('');
+    setInviteSuccess(null);
+
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/api/users/invite-vendor`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: inviteEmail.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to send vendor invitation.');
+      }
+
+      setInviteSuccess(data);
+      setInviteEmail('');
+      fetchVendors(); // Refresh stats
+    } catch (err) {
+      setInviteError(err.message);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   // Admin Editing State
   const isAdmin = userRole === 'Admin';
@@ -97,7 +187,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setEditLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/vendors/${selectedVendor.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${selectedVendor.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -138,7 +228,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
         status: statusFilter,
         entityType: entityFilter
       });
-      const res = await fetch(`${API_BASE_URL}/api/vendors?${params.toString()}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/vendors?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -204,7 +294,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/vendors/${vendorId}/status`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${vendorId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -259,12 +349,23 @@ export default function Dashboard({ token, userRole, onLogout }) {
             </h1>
             <p className="text-slate-400 mt-1">Review, verify, and manage vendor compliance profiles.</p>
           </div>
-          <button
-            onClick={fetchVendors}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 rounded-xl transition text-sm font-semibold self-start md:self-center"
-          >
-            Refresh Database
-          </button>
+          <div className="flex gap-3 self-start md:self-center">
+            {isAdmin && (
+              <button
+                onClick={() => setIsInviteModalOpen(true)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition text-sm font-semibold flex items-center gap-1.5 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                Invite Vendor
+              </button>
+            )}
+            <button
+              onClick={fetchVendors}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 rounded-xl transition text-sm font-semibold"
+            >
+              Refresh Database
+            </button>
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -389,8 +490,13 @@ export default function Dashboard({ token, userRole, onLogout }) {
                   {filteredVendors.map(vendor => (
                     <tr key={vendor.id} className="hover:bg-slate-850/30 transition-colors">
                       <td className="p-4 pl-6 font-semibold">
-                        <div>{vendor.legalName}</div>
-                        {vendor.tradeName && <div className="text-xs text-slate-500 font-normal">{vendor.tradeName}</div>}
+                        <div className="flex flex-col">
+                          <span>{vendor.legalName}</span>
+                          <span className="text-[10px] text-indigo-400 font-mono font-bold mt-1">
+                            {`VK18-${vendor.id.split('-')[0].toUpperCase()}`}
+                          </span>
+                          {vendor.tradeName && <span className="text-xs text-slate-500 font-normal mt-0.5">{vendor.tradeName}</span>}
+                        </div>
                       </td>
                       <td className="p-4 text-slate-300">{vendor.entityType}</td>
                       <td className="p-4">
@@ -446,14 +552,12 @@ export default function Dashboard({ token, userRole, onLogout }) {
                       </td>
                       <td className="p-4 text-right pr-6">
                         <button
-                          onClick={() => {
-                            setSelectedVendor(vendor);
-                            setCommentInput('');
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/50 hover:bg-indigo-900 border border-indigo-900 hover:border-indigo-700 text-indigo-400 hover:text-indigo-300 text-xs font-semibold rounded-lg transition"
+                          disabled={detailLoading}
+                          onClick={() => handleSelectVendor(vendor.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/50 hover:bg-indigo-900 border border-indigo-900 hover:border-indigo-700 text-indigo-400 hover:text-indigo-300 text-xs font-semibold rounded-lg transition disabled:opacity-50"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          Review
+                          {detailLoading ? 'Loading...' : 'Review'}
                         </button>
                       </td>
                     </tr>
@@ -506,25 +610,122 @@ export default function Dashboard({ token, userRole, onLogout }) {
         </div>
       </div>
 
-      {/* Detail Drawer (Overlay Modal Centered) */}
+      {/* Detail Drawer (Overlay Modal Centered - Split View) */}
       {selectedVendor && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fadeIn">
-          {/* Centered Modal Panel */}
-          <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl max-h-[90vh] overflow-y-auto flex flex-col justify-between shadow-2xl relative">
+          {/* Split Screen Modal Panel */}
+          <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 rounded-2xl h-[90vh] flex overflow-hidden shadow-2xl relative">
 
-            {/* Close button */}
-            <button
-              onClick={() => {
-                setSelectedVendor(null);
-                setIsEditing(false);
-              }}
-              className="absolute top-4 right-4 p-2 bg-slate-950 border border-slate-800 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {/* LEFT PANEL: Document Previewer */}
+            <div className="hidden md:flex w-1/2 bg-slate-950 border-r border-slate-800 flex-col h-full relative">
+              <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-indigo-400" />
+                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Document Viewer - {
+                      activeFileKey === 'pan' ? 'PAN Card' :
+                      activeFileKey === 'gst' ? 'GST Certificate' :
+                      activeFileKey === 'reg' ? 'Registration Certificate' :
+                      activeFileKey === 'cheque' ? 'Cancelled Cheque' :
+                      activeFileKey === 'iso' ? 'ISO / Compliance file' : 'No Document Selected'
+                    }
+                  </span>
+                </div>
+                {activeFileUrl && (
+                  <a
+                    href={getAuthorizedUrl(activeFileUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-indigo-405 hover:text-indigo-300 underline"
+                  >
+                    Open in New Tab
+                  </a>
+                )}
+              </div>
 
-            {/* Content Body */}
-            <div className="p-6 md:p-8 space-y-6">
+              <div className="flex-1 flex items-center justify-center overflow-hidden bg-slate-950 relative">
+                {activeFileUrl ? (
+                  // Simple check for PDF vs image rendering
+                  (activeFileUrl.toLowerCase().endsWith('.pdf') || 
+                   activeFileUrl.toLowerCase().includes('ext=.pdf') ||
+                   activeFileUrl.includes('/pdf')) ? (
+                    <iframe
+                      src={getAuthorizedUrl(activeFileUrl)}
+                      className="w-full h-full border-0 rounded bg-slate-900"
+                      title="PDF Document Preview"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col justify-between relative bg-slate-950">
+                      {/* Image Zoom Toolbar */}
+                      <div className="absolute top-2 right-2 z-20 flex gap-1.5 p-1.5 bg-slate-900/90 border border-slate-800 rounded-lg backdrop-blur">
+                        <button
+                          type="button"
+                          onClick={() => setImgScale(prev => Math.max(prev - 0.2, 0.4))}
+                          className="p-1 hover:bg-slate-800 rounded text-slate-405 hover:text-slate-200 transition animate-none"
+                          title="Zoom Out"
+                        >
+                          <ZoomOut className="w-4 h-4" />
+                        </button>
+                        <span className="text-[10px] font-bold font-mono text-slate-400 min-w-[32px] text-center self-center">
+                          {Math.round(imgScale * 100)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setImgScale(prev => Math.min(prev + 0.2, 3))}
+                          className="p-1 hover:bg-slate-800 rounded text-slate-405 hover:text-slate-200 transition"
+                          title="Zoom In"
+                        >
+                          <ZoomIn className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImgScale(1)}
+                          className="p-1 hover:bg-slate-800 rounded text-slate-405 hover:text-slate-200 transition border-l border-slate-800 pl-1.5 ml-0.5"
+                          title="Reset Zoom"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Scrollable image viewport */}
+                      <div className="flex-1 flex items-center justify-center overflow-auto p-4">
+                        <div 
+                          className="transition-transform duration-200 ease-out"
+                          style={{ transform: `scale(${imgScale})`, transformOrigin: 'center center' }}
+                        >
+                          <img
+                            src={getAuthorizedUrl(activeFileUrl)}
+                            alt="Document Preview"
+                            className="max-w-[85vh] max-h-[70vh] object-contain rounded shadow-2xl"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="text-center text-slate-500 font-semibold space-y-2">
+                    <FileText className="w-12 h-12 mx-auto text-slate-700 animate-pulse" />
+                    <p className="text-xs">No documents uploaded or selected for this profile.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT PANEL: Details & Action Bar */}
+            <div className="w-full md:w-1/2 flex flex-col h-full justify-between relative bg-slate-900">
+              {/* Close button */}
+              <button
+                onClick={() => {
+                  setSelectedVendor(null);
+                  setIsEditing(false);
+                }}
+                className="absolute top-4 right-4 z-10 p-2 bg-slate-950 border border-slate-800 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Scrollable details form content */}
+              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
               {/* Header Title */}
               <div className="flex justify-between items-start">
                 <div className="flex-1 mr-4">
@@ -539,6 +740,9 @@ export default function Dashboard({ token, userRole, onLogout }) {
                     <>
                       <h2 className="text-2xl font-black text-slate-100 mt-2">{selectedVendor.legalName}</h2>
                       {selectedVendor.tradeName && <p className="text-slate-400 text-sm font-medium mt-1">DBA: {selectedVendor.tradeName}</p>}
+                      <p className="text-slate-500 text-[11px] font-semibold mt-2 bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800/40 w-fit inline-flex items-center gap-1.5">
+                        Form ID: <span className="font-mono text-indigo-400 font-bold select-all">{`VK18-${selectedVendor.id.split('-')[0].toUpperCase()}`}</span>
+                      </p>
                       {selectedVendor.googleFormResponseId && (
                         <p className="text-slate-500 text-[11px] font-semibold mt-1 bg-slate-950 px-2 py-1.5 rounded-lg border border-slate-800/40 w-fit">
                           Google Form ID: <span className="font-mono text-slate-300 select-all">{selectedVendor.googleFormResponseId}</span>
@@ -987,51 +1191,142 @@ export default function Dashboard({ token, userRole, onLogout }) {
                   </div>
                 </div>
               </div>
-              {/* SECTION 3.8: Attached Documents (Google Drive Links) */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-4 text-xs md:text-sm">
+              {/* SECTION 3.8: Attached Documents (Uploaded Files Selection) */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 text-xs md:text-sm">
                 <h3 className="text-sm font-bold text-indigo-400 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-amber-500" />
-                  Google Drive Document Links
+                  Select Document to Preview
                 </h3>
 
                 {!isEditing ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-slate-500 font-semibold block mb-1">PAN Card Link:</span>
+                  <div className="space-y-2">
+                    {/* PAN Card Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedVendor.panFileUrl) {
+                          setActiveFileUrl(selectedVendor.panFileUrl);
+                          setActiveFileKey('pan');
+                        }
+                      }}
+                      disabled={!selectedVendor.panFileUrl}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition text-left ${
+                        !selectedVendor.panFileUrl ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950/20 text-slate-600' :
+                        activeFileKey === 'pan' ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400 font-bold' :
+                        'bg-slate-900 border-slate-800 text-slate-350 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span>PAN Card</span>
                       {selectedVendor.panFileUrl ? (
-                        <a
-                          href={selectedVendor.panFileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-900 border border-indigo-900 text-indigo-400 font-semibold rounded-lg text-xs transition"
-                        >
-                          View PAN Card
-                        </a>
+                        <span className="text-[10px] bg-indigo-950/60 px-2 py-0.5 rounded text-indigo-400 font-semibold">Available</span>
                       ) : (
-                        <span className="text-slate-500 italic">No PAN Card uploaded</span>
+                        <span className="text-[10px] text-slate-650 italic">Not Uploaded</span>
                       )}
-                    </div>
+                    </button>
 
-                    <div>
-                      <span className="text-slate-500 font-semibold block mb-1">GST Certificate Link:</span>
+                    {/* GST Certificate Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedVendor.gstFileUrl) {
+                          setActiveFileUrl(selectedVendor.gstFileUrl);
+                          setActiveFileKey('gst');
+                        }
+                      }}
+                      disabled={!selectedVendor.gstFileUrl}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition text-left ${
+                        !selectedVendor.gstFileUrl ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950/20 text-slate-600' :
+                        activeFileKey === 'gst' ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400 font-bold' :
+                        'bg-slate-900 border-slate-800 text-slate-355 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span>GST Certificate</span>
                       {selectedVendor.gstFileUrl ? (
-                        <a
-                          href={selectedVendor.gstFileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-900 border border-indigo-900 text-indigo-400 font-semibold rounded-lg text-xs transition"
-                        >
-                          View GST Certificate
-                        </a>
+                        <span className="text-[10px] bg-indigo-950/60 px-2 py-0.5 rounded text-indigo-400 font-semibold">Available</span>
                       ) : (
-                        <span className="text-slate-500 italic">No GST Certificate uploaded</span>
+                        <span className="text-[10px] text-slate-655 italic">Not Uploaded</span>
                       )}
-                    </div>
+                    </button>
+
+                    {/* Registration Certificate Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = selectedVendor.verificationLogs?.uploadedDocuments?.regFileUrl;
+                        if (url) {
+                          setActiveFileUrl(url);
+                          setActiveFileKey('reg');
+                        }
+                      }}
+                      disabled={!selectedVendor.verificationLogs?.uploadedDocuments?.regFileUrl}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition text-left ${
+                        !selectedVendor.verificationLogs?.uploadedDocuments?.regFileUrl ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950/20 text-slate-600' :
+                        activeFileKey === 'reg' ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400 font-bold' :
+                        'bg-slate-900 border-slate-800 text-slate-355 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span>Company Registration Certificate</span>
+                      {selectedVendor.verificationLogs?.uploadedDocuments?.regFileUrl ? (
+                        <span className="text-[10px] bg-indigo-950/60 px-2 py-0.5 rounded text-indigo-400 font-semibold">Available</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-655 italic">Not Uploaded</span>
+                      )}
+                    </button>
+
+                    {/* Cancelled Cheque Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = selectedVendor.verificationLogs?.uploadedDocuments?.chequeFileUrl;
+                        if (url) {
+                          setActiveFileUrl(url);
+                          setActiveFileKey('cheque');
+                        }
+                      }}
+                      disabled={!selectedVendor.verificationLogs?.uploadedDocuments?.chequeFileUrl}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition text-left ${
+                        !selectedVendor.verificationLogs?.uploadedDocuments?.chequeFileUrl ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950/20 text-slate-600' :
+                        activeFileKey === 'cheque' ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400 font-bold' :
+                        'bg-slate-900 border-slate-800 text-slate-355 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span>Cancelled Cheque</span>
+                      {selectedVendor.verificationLogs?.uploadedDocuments?.chequeFileUrl ? (
+                        <span className="text-[10px] bg-indigo-950/60 px-2 py-0.5 rounded text-indigo-400 font-semibold">Available</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-655 italic">Not Uploaded</span>
+                      )}
+                    </button>
+
+                    {/* ISO Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = selectedVendor.verificationLogs?.uploadedDocuments?.isoFileUrl;
+                        if (url) {
+                          setActiveFileUrl(url);
+                          setActiveFileKey('iso');
+                        }
+                      }}
+                      disabled={!selectedVendor.verificationLogs?.uploadedDocuments?.isoFileUrl}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition text-left ${
+                        !selectedVendor.verificationLogs?.uploadedDocuments?.isoFileUrl ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950/20 text-slate-650' :
+                        activeFileKey === 'iso' ? 'bg-indigo-600/10 border-indigo-500 text-indigo-400 font-bold' :
+                        'bg-slate-900 border-slate-800 text-slate-355 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span>ISO / Compliance Certifications</span>
+                      {selectedVendor.verificationLogs?.uploadedDocuments?.isoFileUrl ? (
+                        <span className="text-[10px] bg-indigo-950/60 px-2 py-0.5 rounded text-indigo-400 font-semibold">Available</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-655 italic">Not Uploaded</span>
+                      )}
+                    </button>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">PAN Card URL (Google Drive)</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">PAN Card URL</label>
                       <input
                         type="text"
                         value={editData.panFileUrl}
@@ -1040,11 +1335,65 @@ export default function Dashboard({ token, userRole, onLogout }) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">GST Certificate URL (Google Drive)</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">GST Certificate URL</label>
                       <input
                         type="text"
                         value={editData.gstFileUrl}
                         onChange={e => setEditData({ ...editData, gstFileUrl: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Registration Certificate URL</label>
+                      <input
+                        type="text"
+                        value={editData.verificationLogs?.uploadedDocuments?.regFileUrl || ''}
+                        onChange={e => setEditData({
+                          ...editData,
+                          verificationLogs: {
+                            ...editData.verificationLogs,
+                            uploadedDocuments: {
+                              ...editData.verificationLogs?.uploadedDocuments,
+                              regFileUrl: e.target.value
+                            }
+                          }
+                        })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Cancelled Cheque URL</label>
+                      <input
+                        type="text"
+                        value={editData.verificationLogs?.uploadedDocuments?.chequeFileUrl || ''}
+                        onChange={e => setEditData({
+                          ...editData,
+                          verificationLogs: {
+                            ...editData.verificationLogs,
+                            uploadedDocuments: {
+                              ...editData.verificationLogs?.uploadedDocuments,
+                              chequeFileUrl: e.target.value
+                            }
+                          }
+                        })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">ISO Certificate URL</label>
+                      <input
+                        type="text"
+                        value={editData.verificationLogs?.uploadedDocuments?.isoFileUrl || ''}
+                        onChange={e => setEditData({
+                          ...editData,
+                          verificationLogs: {
+                            ...editData.verificationLogs,
+                            uploadedDocuments: {
+                              ...editData.verificationLogs?.uploadedDocuments,
+                              isoFileUrl: e.target.value
+                            }
+                          }
+                        })}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
                       />
                     </div>
@@ -1152,7 +1501,116 @@ export default function Dashboard({ token, userRole, onLogout }) {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+      )}
 
+      {/* Invite Vendor Modal */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative animate-fadeIn">
+            {/* Close button */}
+            <button
+              onClick={() => {
+                setIsInviteModalOpen(false);
+                setInviteEmail('');
+                setInviteError('');
+                setInviteSuccess(null);
+              }}
+              className="absolute top-4 right-4 p-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-4">
+              <UserPlus className="w-5 h-5 text-indigo-400" />
+              <h3 className="font-bold text-lg text-slate-100">Invite Vendor</h3>
+            </div>
+
+            {inviteSuccess ? (
+              <div className="space-y-4">
+                <div className="p-3.5 bg-emerald-950/40 border border-emerald-800/30 text-emerald-400 rounded-xl text-xs md:text-sm flex items-start gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
+                  <div>
+                    <div className="font-bold text-emerald-450">Onboarding Account Created!</div>
+                    <p className="text-slate-400 mt-1">An invitation with credentials has been created.</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Generated Credentials</span>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="text-slate-500 font-semibold">Onboarding Link:</span>
+                      <a 
+                        href={inviteSuccess.portalUrl} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="text-indigo-400 hover:underline block break-all font-mono mt-0.5"
+                      >
+                        {inviteSuccess.portalUrl}
+                      </a>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-semibold">Username (Email):</span>
+                      <code className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300 block font-mono mt-0.5 break-all">
+                        {inviteSuccess.username}
+                      </code>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-semibold">Temporary Password:</span>
+                      <code className="bg-slate-900 px-1.5 py-0.5 rounded text-amber-400 block font-mono mt-0.5 select-all">
+                        {inviteSuccess.password}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      `Onboarding Link: ${inviteSuccess.portalUrl}\nUsername: ${inviteSuccess.username}\nPassword: ${inviteSuccess.password}`
+                    );
+                    alert('Credentials copied to clipboard!');
+                  }}
+                  className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition shadow-md"
+                >
+                  Copy Invitation Details
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleInviteVendor} className="space-y-4">
+                {inviteError && (
+                  <div className="p-3 bg-rose-950/40 border border-rose-800/30 text-rose-450 rounded-xl text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="font-semibold">{inviteError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Vendor Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="e.g. partner@vendor.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold text-slate-200 placeholder-slate-650 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={inviteLoading}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition shadow disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {inviteLoading ? 'Creating invitation...' : 'Send Invitation Link'}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}
