@@ -747,49 +747,50 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
     console.log(`[INVITATION CREATED] Vendor Email: ${cleanEmail} | Temporary Password: ${generatedPassword}`);
 
     if (smtpHost && smtpUser && smtpPass) {
-      try {
-        const nodemailer = require('nodemailer');
-        const transporter = nodemailer.createTransport({
-          host: smtpHost,
-          port: parseInt(smtpPort, 10),
-          secure: parseInt(smtpPort, 10) === 465, // true for 465, false for other ports
-          auth: {
-            user: smtpUser,
-            pass: smtpPass
-          }
-        });
+      emailSent = true;
+      emailMessage = 'Vendor registered and invitation email is being sent.';
 
-        const mailOptions = {
-          from: `"VK18 Vendor Portal" <${smtpUser}>`,
-          to: cleanEmail,
-          subject: 'Welcome to VK18 Vendor Portal - Onboarding Invitation',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <h2 style="color: #4f46e5; margin-bottom: 20px;">VK18 Pvt Ltd - Vendor Onboarding</h2>
-              <p>Hello,</p>
-              <p>You have been invited to register as a partner/vendor on the VK18 Portal.</p>
-              <p>Please use the credentials below to log in and fill out the Vendor Registration Form:</p>
-              
-              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
-                <p style="margin: 5px 0;"><strong>Portal URL:</strong> <a href="${portalUrl}" style="color: #4f46e5; text-decoration: underline;">${portalUrl}</a></p>
-                <p style="margin: 5px 0;"><strong>Username (Email):</strong> <code>${cleanEmail}</code></p>
-                <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code>${generatedPassword}</code></p>
-              </div>
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort, 10),
+        secure: parseInt(smtpPort, 10) === 465, // true for 465, false for other ports
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
 
-              <p style="color: #64748b; font-size: 12px; margin-top: 30px;">
-                Note: This is a system generated email. For security reasons, please change your password after logging in.
-              </p>
+      const mailOptions = {
+        from: `"VK18 Vendor Portal" <${smtpUser}>`,
+        to: cleanEmail,
+        subject: 'Welcome to VK18 Vendor Portal - Onboarding Invitation',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <h2 style="color: #4f46e5; margin-bottom: 20px;">VK18 Pvt Ltd - Vendor Onboarding</h2>
+            <p>Hello,</p>
+            <p>You have been invited to register as a partner/vendor on the VK18 Portal.</p>
+            <p>Please use the credentials below to log in and fill out the Vendor Registration Form:</p>
+            
+            <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
+              <p style="margin: 5px 0;"><strong>Portal URL:</strong> <a href="${portalUrl}" style="color: #4f46e5; text-decoration: underline;">${portalUrl}</a></p>
+              <p style="margin: 5px 0;"><strong>Username (Email):</strong> <code>${cleanEmail}</code></p>
+              <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code>${generatedPassword}</code></p>
             </div>
-          `
-        };
 
-        await transporter.sendMail(mailOptions);
-        emailSent = true;
-        emailMessage = 'Vendor registered and invitation email sent successfully.';
-      } catch (mailError) {
+            <p style="color: #64748b; font-size: 12px; margin-top: 30px;">
+              Note: This is a system generated email. For security reasons, please change your password after logging in.
+            </p>
+          </div>
+        `
+      };
+
+      // Non-blocking background dispatch
+      transporter.sendMail(mailOptions).then(() => {
+        console.log(`[EMAIL DISPATCHED] Vendor invitation email sent successfully to ${cleanEmail}`);
+      }).catch((mailError) => {
         console.error('SMTP Error dispatching vendor invitation email:', mailError);
-        emailMessage = 'Vendor registered in database, but SMTP server failed to send email. Check credentials below.';
-      }
+      });
     }
 
     res.status(201).json({
