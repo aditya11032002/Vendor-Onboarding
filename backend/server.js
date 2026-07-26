@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const googleFormService = require('./google_form_service');
 const dbService = require('./vendor_db_service');
+const emailService = require('./email_service');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_super_secret_key_123';
@@ -34,7 +35,7 @@ const hashPassword = async (password) => {
 
 // Global rate limiting rule (300 requests / 15 minutes)
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
+  windowMs: 15 * 60 * 1000,
   max: 300,
   message: { message: 'Too many requests from this IP. Please try again after 15 minutes.' },
   standardHeaders: true,
@@ -43,7 +44,7 @@ const globalLimiter = rateLimit({
 
 // Strict rate limiting rule for authentication (20 attempts / 15 minutes)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
+  windowMs: 15 * 60 * 1000,
   max: 20,
   message: { message: 'Too many auth requests from this IP. Please try again after 15 minutes.' },
   standardHeaders: true,
@@ -69,7 +70,7 @@ app.use(cors({
     const clientOrigin = process.env.CLIENT_ORIGIN;
     if (
       (clientOrigin && origin === clientOrigin) ||
-      origin.startsWith('http://localhost:') || 
+      origin.startsWith('http://localhost:') ||
       origin.startsWith('http://127.0.0.1:') ||
       origin.endsWith('.vercel.app') ||
       origin.endsWith('.ngrok-free.app') ||
@@ -89,7 +90,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Configure Multer for in-memory file buffers with validation filter
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB file size limit
   fileFilter: (req, file, cb) => {
@@ -124,7 +125,7 @@ const initializeDatabase = async () => {
       const adminId = uuidv4();
       const salt = crypto.randomBytes(16).toString('hex');
       const hashedPassword = await hashPassword(adminPassword);
-      
+
       await pool.query(
         'INSERT INTO users (id, username, password, salt, role) VALUES ($1, $2, $3, $4, $5)',
         [adminId, adminUsername, hashedPassword, salt, 'Admin']
@@ -228,13 +229,13 @@ const authenticateAdmin = (req, res, next) => {
   if (!token) {
     return res.status(401).json({ message: 'Unauthorized access. No session token provided.' });
   }
-  
+
   // Legacy compatibility: check if it's the static admin token
   if (token === 'admin-session-token') {
     req.user = { username: process.env.ADMIN_USERNAME || 'admin', role: 'Admin' };
     return next();
   }
-  
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (decoded.role === 'Vendor') {
@@ -252,7 +253,7 @@ const authenticateUser = (req, res, next) => {
   if (!token) {
     return res.status(401).json({ message: 'Unauthorized access. No session token provided.' });
   }
-  
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
@@ -433,7 +434,7 @@ app.get('/api/vendors/:id', authenticateAdmin, async (req, res) => {
 // Public route to retrieve binary files from PostgreSQL
 app.get('/api/vendors/files/:vendorId/:fileKey', async (req, res) => {
   const { vendorId, fileKey } = req.params;
-  
+
   // Map keys to DB column names
   const keyMap = {
     pan: { data: 'panFileData', name: 'panFileName', mimetype: 'panFileMimetype' },
@@ -478,7 +479,7 @@ app.post('/api/vendors', upload.fields([
 ]), async (req, res) => {
   try {
     const body = req.body;
-    
+
     // Parse nested object strings sent as multipart/form-data
     const parseField = (field) => {
       if (!field) return {};
@@ -512,7 +513,7 @@ app.post('/api/vendors', upload.fields([
 
     // Resolve file upload URLs (custom DB file retriever endpoints)
     const baseUrl = `${req.protocol}://${req.get('host')}`;
-    
+
     const hasPanFile = req.files && req.files.panFile && req.files.panFile[0];
     const hasGstFile = req.files && req.files.gstFile && req.files.gstFile[0];
     const hasRegFile = req.files && req.files.regFile && req.files.regFile[0];
@@ -572,7 +573,7 @@ app.post('/api/vendors', upload.fields([
       comments: 'Self-onboarded via portal. Awaiting review.',
       panFileUrl,
       gstFileUrl,
-      
+
       // Pass binary data fields to PostgreSQL DB service
       panFileData: hasPanFile ? req.files.panFile[0].buffer : null,
       panFileName: hasPanFile ? req.files.panFile[0].originalname : null,
@@ -660,11 +661,11 @@ app.get('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
 // Create a new user
 app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
   const { username, password, role } = req.body;
-  
+
   if (!username || !password || !role) {
     return res.status(400).json({ message: 'Username, password, and role are required.' });
   }
-  
+
   const validRoles = ['Admin', 'Approver', 'Vendor'];
   if (!validRoles.includes(role)) {
     return res.status(400).json({ message: 'Invalid role selection.' });
@@ -700,7 +701,7 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  
+
   // Basic email format check
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(cleanEmail)) {
@@ -738,103 +739,12 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
     // Build the login portal link pointing to the requesting client origin
     const portalUrl = req.get('origin') || `${req.protocol}://${req.get('host')}`;
 
-    // Dispatch email
-    let emailSent = false;
-    let emailMessage = 'Vendor user account created, but SMTP is not configured. Credentials printed to server logs.';
-
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = process.env.SMTP_PORT || 587;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    console.log(`[INVITATION CREATED] Vendor Email: ${cleanEmail} | Temporary Password: ${generatedPassword}`);
-    console.log(`[SMTP CONFIG CHECK] Host: ${smtpHost || 'NONE'} | Port: ${smtpPort || 'NONE'} | User: ${smtpUser || 'NONE'}`);
-
-    if (smtpHost && smtpUser && smtpPass) {
-      emailSent = true;
-      emailMessage = 'Vendor registered and invitation email is being sent.';
-
-      const cleanPass = smtpPass.replace(/\s+/g, '');
-      const nodemailer = require('nodemailer');
-
-      const host = (smtpHost || '').toLowerCase();
-      let transportOptions;
-
-      if (host.includes('office365') || host.includes('outlook')) {
-        // Microsoft 365 / Outlook SMTP configuration
-        transportOptions = {
-          host: smtpHost,
-          port: parseInt(smtpPort, 10) || 587,
-          secure: false,
-          requireTLS: true,
-          auth: {
-            user: smtpUser,
-            pass: cleanPass
-          },
-          tls: {
-            ciphers: 'SSLv3',
-            rejectUnauthorized: false
-          }
-        };
-      } else if (host.includes('gmail')) {
-        // Google Gmail SMTP configuration
-        transportOptions = {
-          service: 'gmail',
-          auth: {
-            user: smtpUser,
-            pass: cleanPass
-          }
-        };
-      } else {
-        // Generic SMTP configuration
-        const targetPort = parseInt(smtpPort, 10) || 465;
-        transportOptions = {
-          host: smtpHost,
-          port: targetPort,
-          secure: targetPort === 465,
-          auth: {
-            user: smtpUser,
-            pass: cleanPass
-          },
-          tls: {
-            rejectUnauthorized: false
-          }
-        };
-      }
-
-      const transporter = nodemailer.createTransport(transportOptions);
-
-      const mailOptions = {
-        from: `"VK18 Vendor Portal" <${smtpUser}>`,
-        to: cleanEmail,
-        subject: 'Welcome to VK18 Vendor Portal - Onboarding Invitation',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2 style="color: #4f46e5; margin-bottom: 20px;">VK18 Pvt Ltd - Vendor Onboarding</h2>
-            <p>Hello,</p>
-            <p>You have been invited to register as a partner/vendor on the VK18 Portal.</p>
-            <p>Please use the credentials below to log in and fill out the Vendor Registration Form:</p>
-            
-            <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
-              <p style="margin: 5px 0;"><strong>Portal URL:</strong> <a href="${portalUrl}" style="color: #4f46e5; text-decoration: underline;">${portalUrl}</a></p>
-              <p style="margin: 5px 0;"><strong>Username (Email):</strong> <code>${cleanEmail}</code></p>
-              <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code>${generatedPassword}</code></p>
-            </div>
-
-            <p style="color: #64748b; font-size: 12px; margin-top: 30px;">
-              Note: This is a system generated email. For security reasons, please change your password after logging in.
-            </p>
-          </div>
-        `
-      };
-
-      // Non-blocking background dispatch
-      transporter.sendMail(mailOptions).then((info) => {
-        console.log(`[EMAIL DISPATCHED SUCCESS] Vendor invitation email sent to ${cleanEmail}. MessageId: ${info.messageId}`);
-      }).catch((mailError) => {
-        console.error(`[SMTP ERROR FAILURE] Failed to send email to ${cleanEmail}:`, mailError.message || mailError);
-      });
-    }
+    // Dispatch email via modular email service
+    const { emailSent, message: emailMessage } = emailService.sendVendorInvitation({
+      toEmail: cleanEmail,
+      generatedPassword,
+      portalUrl
+    });
 
     res.status(201).json({
       success: true,

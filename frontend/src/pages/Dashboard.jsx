@@ -43,10 +43,10 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const [inviteSuccess, setInviteSuccess] = useState(null);
 
   // Detail Drawer Fetching State
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [loadingVendorId, setLoadingVendorId] = useState(null);
 
   const handleSelectVendor = async (vendorId) => {
-    setDetailLoading(true);
+    setLoadingVendorId(vendorId);
     try {
       const res = await apiFetch(`${API_BASE_URL}/api/vendors/${vendorId}`);
       if (res.status === 401) {
@@ -74,7 +74,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
     } catch (err) {
       alert(`Error loading vendor details: ${err.message}`);
     } finally {
-      setDetailLoading(false);
+      setLoadingVendorId(null);
     }
   };
 
@@ -552,12 +552,12 @@ export default function Dashboard({ token, userRole, onLogout }) {
                       </td>
                       <td className="p-4 text-right pr-6">
                         <button
-                          disabled={detailLoading}
+                          disabled={!!loadingVendorId}
                           onClick={() => handleSelectVendor(vendor.id)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/50 hover:bg-indigo-900 border border-indigo-900 hover:border-indigo-700 text-indigo-400 hover:text-indigo-300 text-xs font-semibold rounded-lg transition disabled:opacity-50"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          {detailLoading ? 'Loading...' : 'Review'}
+                          {loadingVendorId === vendor.id ? 'Loading...' : 'Review'}
                         </button>
                       </td>
                     </tr>
