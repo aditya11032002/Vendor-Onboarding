@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import VendorForm from './pages/VendorForm';
+import OnboardingForm from './pages/OnboardingForm';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import UsersSettings from './pages/UsersSettings';
@@ -118,8 +118,10 @@ export default function App() {
         return;
       }
       const hash = window.location.hash;
-      if (hash === '#/form') {
+      if (hash === '#/form' || hash === '#/vendor-form') {
         setCurrentPage('form');
+      } else if (hash === '#/customer-form') {
+        setCurrentPage('customerForm');
       } else if (hash === '#/users') {
         setCurrentPage('users');
       } else {
@@ -142,6 +144,8 @@ export default function App() {
     }
     if (page === 'form') {
       window.location.hash = '/form';
+    } else if (page === 'customerForm') {
+      window.location.hash = '/customer-form';
     } else if (page === 'users') {
       window.location.hash = '/users';
     } else {
@@ -226,8 +230,20 @@ export default function App() {
                 }`}
               title="Vendor Form"
             >
-              <UserPlus className="w-4 h-4 shrink-0" />
+              <UserPlus className="w-4 h-4 shrink-0 text-indigo-500" />
               {!sidebarCollapsed && <span>Vendor Form</span>}
+            </button>
+
+            <button
+              onClick={() => navigateTo('customerForm')}
+              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'customerForm'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              title="Customer Form"
+            >
+              <UserPlus className="w-4 h-4 shrink-0 text-emerald-500" />
+              {!sidebarCollapsed && <span>Customer Form</span>}
             </button>
 
             {userRole === 'Admin' && (
@@ -264,7 +280,9 @@ export default function App() {
       {/* Main Panel Content Area */}
       <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200">
         {currentPage === 'form' ? (
-          <VendorForm />
+          <OnboardingForm type="vendor" />
+        ) : currentPage === 'customerForm' ? (
+          <OnboardingForm type="customer" />
         ) : currentPage === 'users' ? (
           <UsersSettings token={token} />
         ) : (

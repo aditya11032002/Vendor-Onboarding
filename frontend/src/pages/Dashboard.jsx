@@ -8,6 +8,10 @@ import { API_BASE_URL, apiFetch } from '../config';
 
 export default function Dashboard({ token, userRole, onLogout }) {
   const [vendors, setVendors] = useState([]);
+  const [activeTab, setActiveTab] = useState('vendors');
+  const entityLabel = activeTab === 'customers' ? 'Customer' : 'Vendor';
+  const entityLabelPlural = activeTab === 'customers' ? 'Customers' : 'Vendors';
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -35,6 +39,15 @@ export default function Dashboard({ token, userRole, onLogout }) {
     setImgScale(1);
   }, [activeFileUrl]);
 
+  // Reset page and filters when activeTab changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setSearchTerm('');
+    setStatusFilter('All');
+    setEntityFilter('All');
+    setSelectedVendor(null);
+  }, [activeTab]);
+
   // Invite Vendor Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -48,7 +61,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const handleSelectVendor = async (vendorId) => {
     setLoadingVendorId(vendorId);
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${vendorId}`);
+      const res = await apiFetch(`${API_BASE_URL}/api/${activeTab}/${vendorId}`);
       if (res.status === 401) {
         onLogout();
         return;
@@ -187,7 +200,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setEditLoading(true);
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${selectedVendor.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/${activeTab}/${selectedVendor.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -209,7 +222,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
       setVendors(prev => prev.map(v => v.id === selectedVendor.id ? updated : v));
       setSelectedVendor(updated);
       setIsEditing(false);
-      alert('Vendor details successfully updated in database!');
+      alert(`${entityLabel} details successfully updated in database!`);
     } catch (err) {
       alert(`Error saving edits: ${err.message}`);
     } finally {
@@ -228,7 +241,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
         status: statusFilter,
         entityType: entityFilter
       });
-      const res = await apiFetch(`${API_BASE_URL}/api/vendors?${params.toString()}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/${activeTab}?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -260,7 +273,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
         setDashboardStats(stats);
       }
     } catch (err) {
-      setError(err.message || 'Error loading vendor data.');
+      setError(err.message || `Error loading ${entityLabel.toLowerCase()} data.`);
     } finally {
       setLoading(false);
     }
@@ -280,10 +293,10 @@ export default function Dashboard({ token, userRole, onLogout }) {
     setCurrentPage(1);
   }, [statusFilter, entityFilter]);
 
-  // Refetch when page index, debounced search, or dropdown filters change
+  // Refetch when page index, debounced search, active tab, or dropdown filters change
   useEffect(() => {
     fetchVendors();
-  }, [currentPage, debouncedSearch, statusFilter, entityFilter, token]);
+  }, [currentPage, debouncedSearch, statusFilter, entityFilter, token, activeTab]);
 
   // Handle Approve / Reject action
   const handleStatusUpdate = async (vendorId, newStatus) => {
@@ -294,7 +307,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
     setActionLoading(true);
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/vendors/${vendorId}/status`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/${activeTab}/${vendorId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -302,7 +315,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
         },
         body: JSON.stringify({
           status: newStatus,
-          comments: commentInput.trim() || `Vendor status changed to ${newStatus}.`
+          comments: commentInput.trim() || `${entityLabel} status changed to ${newStatus}.`
         })
       });
 
@@ -319,7 +332,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
       setVendors(prev => prev.map(v => v.id === vendorId ? updatedVendor : v));
       setSelectedVendor(updatedVendor);
       setCommentInput('');
-      alert(`Vendor status successfully updated to ${newStatus}.`);
+      alert(`${entityLabel} status successfully updated to ${newStatus}.`);
     } catch (err) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -347,10 +360,10 @@ export default function Dashboard({ token, userRole, onLogout }) {
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-800 dark:text-slate-100">
               Onboarding Control Panel
             </h1>
-            <p className="text-slate-400 mt-1">Review, verify, and manage vendor compliance profiles.</p>
+            <p className="text-slate-400 mt-1">Review, verify, and manage {entityLabel.toLowerCase()} compliance profiles.</p>
           </div>
           <div className="flex gap-3 self-start md:self-center">
-            {isAdmin && (
+            {isAdmin && activeTab === 'vendors' && (
               <button
                 onClick={() => setIsInviteModalOpen(true)}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition text-sm font-semibold flex items-center gap-1.5 shadow-sm"
@@ -366,6 +379,28 @@ export default function Dashboard({ token, userRole, onLogout }) {
               Refresh Database
             </button>
           </div>
+        </div>
+
+        {/* Tab Toggle Selector */}
+        <div className="flex gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl w-fit">
+          <button
+            onClick={() => setActiveTab('vendors')}
+            className={`px-4 py-2 text-xs md:text-sm font-semibold rounded-lg transition-all ${activeTab === 'vendors'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            Vendors Onboarding
+          </button>
+          <button
+            onClick={() => setActiveTab('customers')}
+            className={`px-4 py-2 text-xs md:text-sm font-semibold rounded-lg transition-all ${activeTab === 'customers'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            Customers Onboarding
+          </button>
         </div>
 
         {/* Stats Grid */}
@@ -395,7 +430,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
             <div className="absolute right-0 bottom-0 translate-x-4 translate-y-4 opacity-5 group-hover:scale-110 transition-transform">
               <CheckCircle2 className="w-32 h-32 text-emerald-400" />
             </div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Approved Vendors</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Approved {entityLabelPlural}</span>
             <h2 className="text-3xl font-black text-emerald-400 mt-2">{stats.approved}</h2>
             <div className="w-12 h-1 bg-emerald-500 rounded-full mt-4" />
           </div>
@@ -461,7 +496,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
           {loading ? (
             <div className="text-center py-20 text-slate-400 font-semibold">
-              Loading vendor databases...
+              Loading {entityLabelPlural.toLowerCase()} databases...
             </div>
           ) : error ? (
             <div className="text-center py-20 text-rose-400 font-semibold flex flex-col items-center gap-3">
@@ -470,14 +505,14 @@ export default function Dashboard({ token, userRole, onLogout }) {
             </div>
           ) : filteredVendors.length === 0 ? (
             <div className="text-center py-20 text-slate-500 font-semibold">
-              No matching vendor profiles found.
+              No matching {entityLabel.toLowerCase()} profiles found.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-950 border-b border-slate-800 text-xs text-slate-400 font-bold uppercase tracking-wider">
-                    <th className="p-4 pl-6">Vendor Name</th>
+                    <th className="p-4 pl-6">{entityLabel} Name</th>
                     <th className="p-4">Entity Type</th>
                     <th className="p-4">PAN</th>
                     <th className="p-4">GSTIN</th>
@@ -493,7 +528,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
                         <div className="flex flex-col">
                           <span>{vendor.legalName}</span>
                           <span className="text-[10px] text-indigo-400 font-mono font-bold mt-1">
-                            {`VK18-${vendor.id.split('-')[0].toUpperCase()}`}
+                            {`${activeTab === 'customers' ? 'CUST' : 'VK18'}-${vendor.id.split('-')[0].toUpperCase()}`}
                           </span>
                           {vendor.tradeName && <span className="text-xs text-slate-500 font-normal mt-0.5">{vendor.tradeName}</span>}
                         </div>
@@ -569,7 +604,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
               {totalPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-slate-800 bg-slate-900/50">
                   <span className="text-xs text-slate-400">
-                    Showing page <span className="font-semibold text-slate-200">{currentPage}</span> of <span className="font-semibold text-slate-200">{totalPages}</span> pages (Total: {totalVendors} vendors)
+                    Showing page <span className="font-semibold text-slate-200">{currentPage}</span> of <span className="font-semibold text-slate-200">{totalPages}</span> pages (Total: {totalVendors} {entityLabelPlural.toLowerCase()})
                   </span>
                   
                   <div className="flex gap-2">

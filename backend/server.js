@@ -114,7 +114,42 @@ const pool = new Pool({
 const initializeDatabase = async () => {
   try {
     await dbService.initializeDatabaseSchema(pool);
-    console.log('PostgreSQL database schema checked/initialized successfully via DB Service.');
+    console.log('PostgreSQL vendors table checked/initialized successfully.');
+
+    // Initialize PostgreSQL customers table
+    const createCustomersTableQuery = `
+      CREATE TABLE IF NOT EXISTS customers (
+        id UUID PRIMARY KEY,
+        "legalName" VARCHAR(255) NOT NULL,
+        "tradeName" VARCHAR(255),
+        "entityType" VARCHAR(100),
+        "dateOfIncorporation" VARCHAR(100),
+        cin VARCHAR(100),
+        llpin VARCHAR(100),
+        pan VARCHAR(50) NOT NULL,
+        "gstStatus" VARCHAR(100),
+        gstin VARCHAR(100),
+        "msmeStatus" VARCHAR(50),
+        "udyamNumber" VARCHAR(100),
+        "registeredAddress" JSONB,
+        "billingAddress" JSONB,
+        "primaryContact" JSONB,
+        "financeContact" JSONB,
+        "bankDetails" JSONB,
+        "panVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
+        "gstVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
+        "verificationLogs" JSONB DEFAULT '{}'::jsonb,
+        status VARCHAR(50) DEFAULT 'Pending',
+        comments TEXT,
+        "googleFormResponseId" VARCHAR(255),
+        "panFileUrl" TEXT,
+        "gstFileUrl" TEXT,
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    await pool.query(createCustomersTableQuery);
+    console.log('PostgreSQL customers table checked/initialized successfully.');
 
     // Seed default administrator if users table is empty
     const usersCheck = await pool.query('SELECT COUNT(*) FROM users');
@@ -655,6 +690,212 @@ app.get('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Failed to fetch users list.' });
+  }
+});
+
+// --- Customer API Endpoints ---
+
+// 1. Get all customers
+app.get('/api/customers', authenticateAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM customers ORDER BY "createdAt" DESC');
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({ message: 'Internal server error while fetching customers.' });
+  }
+});
+
+// 2. Get single customer details
+app.get('/api/customers/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching customer details:', error);
+    res.status(500).json({ message: 'Internal server error while retrieving customer.' });
+  }
+});
+
+// 3. Create a new customer (From Customer Onboarding Form)
+app.post('/api/customers', async (req, res) => {
+  const newCustomerData = req.body;
+
+  // Basic server-side validation
+  if (!newCustomerData.legalName || !newCustomerData.pan || !newCustomerData.primaryContact?.email) {
+    return res.status(400).json({ message: 'Legal Name, PAN, and Primary Email are required.' });
+  }
+
+  const id = uuidv4();
+  const legalName = newCustomerData.legalName;
+  const tradeName = newCustomerData.tradeName || '';
+  const entityType = newCustomerData.entityType || 'Proprietorship';
+  const dateOfIncorporation = newCustomerData.dateOfIncorporation || '';
+  const cin = newCustomerData.cin || '';
+  const llpin = newCustomerData.llpin || '';
+  const pan = newCustomerData.pan.toUpperCase().trim();
+  const gstStatus = newCustomerData.gstStatus || 'Unregistered';
+  const gstin = newCustomerData.gstin ? newCustomerData.gstin.toUpperCase().trim() : '';
+  const msmeStatus = newCustomerData.msmeStatus || 'No';
+  const udyamNumber = newCustomerData.udyamNumber || '';
+  const registeredAddress = newCustomerData.registeredAddress || {};
+  const billingAddress = newCustomerData.billingAddress || {};
+  const primaryContact = newCustomerData.primaryContact || {};
+  const financeContact = newCustomerData.financeContact || {};
+  const bankDetails = newCustomerData.bankDetails || {};
+  const status = 'Pending';
+  const comments = 'Self-onboarded via portal. Awaiting review.';
+  const createdAt = new Date().toISOString();
+  const updatedAt = new Date().toISOString();
+
+  // Run mock Tax Identifier Verification
+  const verification = await verifyTaxIdentifiers(pan, gstin, legalName);
+
+  try {
+    const query = `
+      INSERT INTO customers (
+        id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan,
+        "gstStatus", gstin, "msmeStatus", "udyamNumber", "registeredAddress", "billingAddress",
+        "primaryContact", "financeContact", "bankDetails", "panVerificationStatus", "gstVerificationStatus",
+        "verificationLogs", status, comments, "createdAt", "updatedAt"
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+      ) RETURNING *
+    `;
+    const values = [
+      id, legalName, tradeName, entityType, dateOfIncorporation, cin, llpin, pan,
+      gstStatus, gstin, msmeStatus, udyamNumber, JSON.stringify(registeredAddress), JSON.stringify(billingAddress),
+      JSON.stringify(primaryContact), JSON.stringify(financeContact), JSON.stringify(bankDetails),
+      verification.panVerificationStatus, verification.gstVerificationStatus, JSON.stringify(verification.verificationLogs),
+      status, comments, createdAt, updatedAt
+    ];
+    const result = await pool.query(query, values);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error inserting customer into DB:', error);
+    res.status(500).json({ message: 'Failed to write to database' });
+  }
+});
+
+// 4. Update customer status and comments (From Admin Dashboard)
+app.patch('/api/customers/:id/status', authenticateAdmin, async (req, res) => {
+  const { status, comments } = req.body;
+  const validStatuses = ['Pending', 'Approved', 'Rejected'];
+
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ message: 'Invalid or missing status' });
+  }
+
+  try {
+    const selectResult = await pool.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    if (selectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+
+    const currentCustomer = selectResult.rows[0];
+    const updatedComments = comments || currentCustomer.comments;
+    const updatedAt = new Date().toISOString();
+
+    const updateQuery = `
+      UPDATE customers
+      SET status = $1, comments = $2, "updatedAt" = $3
+      WHERE id = $4
+      RETURNING *
+    `;
+    const updateResult = await pool.query(updateQuery, [status, updatedComments, updatedAt, req.params.id]);
+    res.json(updateResult.rows[0]);
+  } catch (error) {
+    console.error('Error updating customer status:', error);
+    res.status(500).json({ message: 'Failed to update database' });
+  }
+});
+
+// 5. Update customer details (From Admin Dashboard - Admin Only)
+app.put('/api/customers/:id', authenticateAdmin, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const {
+    legalName,
+    tradeName,
+    entityType,
+    dateOfIncorporation,
+    cin,
+    llpin,
+    pan,
+    gstin,
+    msmeStatus,
+    udyamNumber,
+    registeredAddress,
+    billingAddress,
+    primaryContact,
+    financeContact,
+    bankDetails,
+    verificationLogs,
+    googleFormResponseId,
+    panFileUrl,
+    gstFileUrl
+  } = req.body;
+
+  try {
+    const query = `
+      UPDATE customers
+      SET 
+        "legalName" = $1,
+        "tradeName" = $2,
+        "entityType" = $3,
+        "dateOfIncorporation" = $4,
+        cin = $5,
+        llpin = $6,
+        pan = $7,
+        gstin = $8,
+        "msmeStatus" = $9,
+        "udyamNumber" = $10,
+        "registeredAddress" = $11,
+        "billingAddress" = $12,
+        "primaryContact" = $13,
+        "financeContact" = $14,
+        "bankDetails" = $15,
+        "verificationLogs" = $16,
+        "googleFormResponseId" = $17,
+        "panFileUrl" = $18,
+        "gstFileUrl" = $19,
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = $20
+      RETURNING *
+    `;
+    const values = [
+      legalName,
+      tradeName,
+      entityType,
+      dateOfIncorporation,
+      cin,
+      llpin,
+      pan,
+      gstin,
+      msmeStatus,
+      udyamNumber,
+      typeof registeredAddress === 'string' ? registeredAddress : JSON.stringify(registeredAddress),
+      typeof billingAddress === 'string' ? billingAddress : JSON.stringify(billingAddress),
+      typeof primaryContact === 'string' ? primaryContact : JSON.stringify(primaryContact),
+      typeof financeContact === 'string' ? financeContact : JSON.stringify(financeContact),
+      typeof bankDetails === 'string' ? bankDetails : JSON.stringify(bankDetails),
+      typeof verificationLogs === 'string' ? verificationLogs : JSON.stringify(verificationLogs || {}),
+      googleFormResponseId || null,
+      panFileUrl || null,
+      gstFileUrl || null,
+      id
+    ];
+
+    const result = await pool.query(query, values);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating customer details:', error);
+    res.status(500).json({ message: 'Failed to update customer details.' });
   }
 });
 

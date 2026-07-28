@@ -10,7 +10,12 @@ const ENTITY_TYPES = [
   'Public Limited', 'HUF', 'Trust', 'Society'
 ];
 
-export default function VendorForm() {
+export default function OnboardingForm({ type = 'vendor' }) {
+  const isCustomer = type === 'customer';
+  const entityName = isCustomer ? 'Customer' : 'Vendor';
+  const entityNameLower = isCustomer ? 'customer' : 'vendor';
+  const apiEndpoint = isCustomer ? '/api/customers' : '/api/vendors';
+
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -232,14 +237,14 @@ export default function VendorForm() {
       if (uploadedFiles.chequeFile) dataPayload.append('chequeFile', uploadedFiles.chequeFile);
       if (uploadedFiles.isoFile) dataPayload.append('isoFile', uploadedFiles.isoFile);
 
-      const response = await apiFetch(`${API_BASE_URL}/api/vendors`, {
+      const response = await apiFetch(`${API_BASE_URL}${apiEndpoint}`, {
         method: 'POST',
         body: dataPayload
       });
 
       const resData = await response.json();
       if (!response.ok) {
-        throw new Error(resData.message || 'Failed to submit onboarding form');
+        throw new Error(resData.message || `Failed to submit ${entityNameLower} onboarding form`);
       }
 
       setSubmittedVendorId(resData.id || '');
@@ -258,9 +263,9 @@ export default function VendorForm() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-100">
-            Vendor Registration Form - VK18 Pvt Ltd
+            {entityName} Registration Form
           </h1>
-          <p className="text-slate-400 mt-2">To be filled up by the concerned vendor/department. (* indicates mandatory)</p>
+          <p className="text-slate-400 mt-2">To be filled up by the concerned {entityNameLower}/department. (* indicates mandatory)</p>
         </div>
 
         {/* Progress Tracker */}
@@ -304,19 +309,19 @@ export default function VendorForm() {
             {submittedVendorId && (
               <div className="my-6 p-5 bg-slate-950 border border-slate-800 rounded-xl max-w-md w-full text-center">
                 <span className="text-slate-500 font-bold text-[10px] uppercase tracking-wider block mb-1.5">
-                  Your Onboarding Form Reference ID
+                  Your Onboarding Reference ID
                 </span>
                 <span className="text-indigo-400 font-mono font-black text-xl select-all tracking-wide">
-                  {`VK18-${submittedVendorId.split('-')[0].toUpperCase()}`}
+                  {`${isCustomer ? 'CUST' : 'VK18'}-${submittedVendorId.split('-')[0].toUpperCase()}`}
                 </span>
                 <p className="text-[10px] text-slate-500 mt-2.5 leading-relaxed">
-                  Please keep this ID safe. You can reference it in any future communications or inquiries with VK18 Pvt Ltd regarding your application.
+                  Please keep this ID safe. You can reference it in any future communications regarding your application.
                 </p>
               </div>
             )}
 
             <p className="text-slate-400 mt-3 max-w-md mx-auto text-sm">
-              Your vendor registration application has been submitted successfully to VK18 Pvt Ltd. Our compliance team will review your details shortly.
+              Your {entityNameLower} registration application has been submitted successfully. Our compliance team will review your details shortly.
             </p>
             <button 
               onClick={() => {
@@ -357,7 +362,7 @@ export default function VendorForm() {
                       name="email"
                       value={formData.email}
                       onChange={handleTextChange}
-                      placeholder="e.g. vendor@company.com"
+                      placeholder={`e.g. ${entityNameLower}@company.com`}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition"
                     />
                   </div>
@@ -369,7 +374,7 @@ export default function VendorForm() {
                       name="legalName"
                       value={formData.legalName}
                       onChange={handleTextChange}
-                      placeholder="e.g. VK18 Logistical Supplies"
+                      placeholder="e.g. Enterprise Logistics Supplies"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition"
                     />
                   </div>
