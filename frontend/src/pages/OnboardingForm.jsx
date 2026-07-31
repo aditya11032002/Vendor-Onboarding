@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, CreditCard, FileText, Phone, Mail, User, 
   MapPin, ArrowRight, ArrowLeft, UploadCloud, CheckCircle2, AlertCircle, ShieldAlert
@@ -10,7 +10,7 @@ const ENTITY_TYPES = [
   'Public Limited', 'HUF', 'Trust', 'Society'
 ];
 
-export default function OnboardingForm({ type = 'vendor' }) {
+export default function OnboardingForm({ type = 'vendor', currentUser, userRole, initialProfileStatus, forceFormView, forceUpdateView, forceStatusView, navigateTo }) {
   const isCustomer = type === 'customer';
   const entityName = isCustomer ? 'Customer' : 'Vendor';
   const entityNameLower = isCustomer ? 'customer' : 'vendor';
@@ -74,6 +74,106 @@ export default function OnboardingForm({ type = 'vendor' }) {
     // Declaration
     agree: false
   });
+
+  const [profileStatus, setProfileStatus] = useState(initialProfileStatus || null);
+  const [profileComments, setProfileComments] = useState('');
+  const [statusLoading, setStatusLoading] = useState(false);
+  const isReadOnly = (userRole === 'Vendor' && profileStatus && profileStatus !== 'Sent' && profileStatus !== 'Rejected');
+
+  useEffect(() => {
+    if (initialProfileStatus) {
+      setProfileStatus(initialProfileStatus);
+    }
+  }, [initialProfileStatus]);
+
+  useEffect(() => {
+    if (userRole === 'Vendor' && currentUser) {
+      setFormData(prev => ({
+        ...prev,
+        email: currentUser,
+        primaryContact: {
+          ...prev.primaryContact,
+          email: currentUser
+        }
+      }));
+    }
+  }, [currentUser, userRole]);
+
+  useEffect(() => {
+    const fetchProfileStatus = async () => {
+      if (userRole !== 'Vendor' || !currentUser) return;
+      try {
+        setStatusLoading(true);
+        const token = localStorage.getItem('admin_token');
+        const res = await apiFetch(`${API_BASE_URL}/api/vendors/my-profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setProfileStatus(data.status);
+          setProfileComments(data.comments || '');
+          if (data.id) {
+            setSubmittedVendorId(data.id);
+          }
+          if (data.status !== 'Sent') {
+            setFormData({
+              email: data.primaryContact?.email || data.email || '',
+              legalName: data.legalName || '',
+              tradeName: data.tradeName || '',
+              entityType: data.entityType || 'Proprietorship',
+              cin: data.cin || '',
+              llpin: data.llpin || '',
+              pan: data.pan || '',
+              gstStatus: data.gstStatus || 'Yes',
+              gstin: data.gstin || '',
+              msmeStatus: data.msmeStatus || 'No',
+              udyamNumber: data.udyamNumber || '',
+              website: data.verificationLogs?.metadata?.website || '',
+              registeredAddress: {
+                street: data.registeredAddress?.street || '',
+                city: data.registeredAddress?.city || '',
+                state: data.registeredAddress?.state || '',
+                pincode: data.registeredAddress?.pincode || '',
+                country: data.registeredAddress?.country || 'India'
+              },
+              primaryContact: {
+                name: data.primaryContact?.name || '',
+                designation: data.primaryContact?.designation || '',
+                email: data.primaryContact?.email || '',
+                mobile: data.primaryContact?.mobile || ''
+              },
+              financeContact: {
+                mobile: data.financeContact?.mobile || ''
+              },
+              bankDetails: {
+                bankName: data.bankDetails?.bankName || '',
+                beneficiaryName: data.bankDetails?.beneficiaryName || '',
+                accountNumber: data.bankDetails?.accountNumber || '',
+                confirmAccountNumber: data.bankDetails?.accountNumber || '',
+                ifscCode: data.bankDetails?.ifscCode || '',
+                branchName: data.bankDetails?.branchName || ''
+              },
+              isoCertified: data.verificationLogs?.metadata?.isoCertified || 'No',
+              otherCertifications: data.verificationLogs?.metadata?.otherCertifications || '',
+              agree: true,
+              panFileUrl: data.panFileUrl,
+              gstFileUrl: data.gstFileUrl,
+              regFileUrl: data.verificationLogs?.uploadedDocuments?.regFileUrl,
+              chequeFileUrl: data.verificationLogs?.uploadedDocuments?.chequeFileUrl,
+              isoFileUrl: data.verificationLogs?.uploadedDocuments?.isoFileUrl
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching vendor profile status:', err);
+      } finally {
+        setStatusLoading(false);
+      }
+    };
+    fetchProfileStatus();
+  }, [currentUser, userRole]);
 
   // Real Uploaded File Objects
   const [uploadedFiles, setUploadedFiles] = useState({
@@ -256,16 +356,310 @@ export default function OnboardingForm({ type = 'vendor' }) {
     }
   };
 
+  if (statusLoading) {
+    return (
+      <div className="max-w-4xl mx-auto py-12 px-4 flex justify-center items-center h-64">
+        <div className="flex flex-col items-center gap-3">
+          <svg className="animate-spin h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <span className="text-sm font-semibold text-slate-400">Loading Application Status...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 1. Tab-based Rendering for Vendor Form view restriction
+  if (forceFormView && profileStatus && profileStatus !== 'Sent') {
+    return (
+      <div className="max-w-4xl mx-auto py-12 px-4 space-y-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl text-center space-y-4 animate-fadeIn">
+          <CheckCircle2 className="w-16 h-16 text-indigo-400 mx-auto animate-bounce" />
+          <h2 className="text-xl font-bold text-slate-100">Application Already Submitted</h2>
+          <p className="text-slate-400 text-xs md:text-sm max-w-md mx-auto leading-relaxed">
+            You have already submitted your onboarding form. You can track the progress in the <strong>Form Status</strong> tab or view your details under the <strong>Update Form</strong> tab.
+          </p>
+          <div className="pt-4 flex gap-4 justify-center">
+            <button
+              onClick={() => navigateTo('vendorStatus')}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-md"
+            >
+              Track Status
+            </button>
+            <button
+              onClick={() => navigateTo('vendorUpdate')}
+              className="px-4 py-2.5 bg-slate-850 hover:bg-slate-805 text-slate-300 rounded-xl text-xs font-bold transition border border-slate-800"
+            >
+              View Submission
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Tab-based Rendering for Vendor Update view restriction
+  if (forceUpdateView && (!profileStatus || profileStatus === 'Sent')) {
+    return (
+      <div className="max-w-4xl mx-auto py-12 px-4 space-y-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl text-center space-y-4 animate-fadeIn">
+          <AlertCircle className="w-16 h-16 text-amber-500 mx-auto animate-pulse" />
+          <h2 className="text-xl font-bold text-slate-100">No Submitted Form Found</h2>
+          <p className="text-slate-400 text-xs md:text-sm max-w-md mx-auto leading-relaxed">
+            Please fill and submit your onboarding application first in the <strong>Vendor Form</strong> tab.
+          </p>
+          <button
+            onClick={() => navigateTo('vendorForm')}
+            className="mt-4 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-md"
+          >
+            Open Registration Form
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Tab-based Rendering for Vendor Status Stepper tracker
+  if (forceStatusView) {
+    const isRejected = profileStatus === 'Rejected';
+    const isApproved = profileStatus === 'Approved' || profileStatus === 'Vendor Created';
+    
+    let activeIndex = 0;
+    if (profileStatus === 'Pending') activeIndex = 1;
+    if (profileStatus === 'L2_Approved') activeIndex = 2;
+    if (isApproved) activeIndex = 3;
+
+    const stepsList = [
+      { label: 'Invitation Sent', description: 'Portal login details dispatched' },
+      { label: 'Application Submitted', description: 'Onboarding form filled & locked' },
+      { label: 'Compliance Audit', description: 'Maker-Checker verification pipeline' },
+      { label: 'Final Onboarding', description: 'Vendor created & integrated' }
+    ];
+
+    // Status mapping values
+    let statusHeader = 'Invitation Dispatched';
+    let statusDesc = 'Your onboarding invitation has been generated. Please navigate to the Vendor Form tab to get started.';
+    let statusThemeClass = 'from-indigo-500/20 to-indigo-950/40 border-indigo-500/30 text-indigo-400';
+    let StatusIcon = AlertCircle;
+
+    if (profileStatus === 'Pending') {
+      statusHeader = 'Application Received';
+      statusDesc = 'Your application has been received and is queued for verification. Currently awaiting compliance audit (Level 2 Approver).';
+      statusThemeClass = 'from-blue-500/20 to-blue-950/40 border-blue-500/30 text-blue-400';
+      StatusIcon = Building2;
+    } else if (profileStatus === 'L2_Approved') {
+      statusHeader = 'Compliance Verified';
+      statusDesc = 'Your application has successfully passed Maker-level compliance check. Currently awaiting checker approval (Level 1 Approver).';
+      statusThemeClass = 'from-amber-500/20 to-amber-955/40 border-amber-500/30 text-amber-400';
+      StatusIcon = ShieldAlert;
+    } else if (isApproved) {
+      statusHeader = 'Onboarding Complete';
+      statusDesc = 'Congratulations! Your vendor profile has been approved and onboarded. Your credentials for SAP system will be dispatched shortly.';
+      statusThemeClass = 'from-emerald-500/20 to-emerald-950/40 border-emerald-500/30 text-emerald-400';
+      StatusIcon = CheckCircle2;
+    } else if (isRejected) {
+      statusHeader = 'Revision Requested';
+      statusDesc = 'Our compliance audit has requested modifications to your onboarding form. Please review the details below, correct the fields, and resubmit.';
+      statusThemeClass = 'from-rose-500/20 to-rose-955/40 border-rose-500/30 text-rose-400';
+      StatusIcon = ShieldAlert;
+    }
+
+    return (
+      <div className="max-w-4xl w-full mx-auto space-y-8 animate-fadeIn py-6 px-2 md:px-6">
+        
+        {/* Page Title */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-black text-slate-100 tracking-tight flex items-center gap-2">
+              <span className="w-2.5 h-6 bg-indigo-650 rounded-full inline-block" />
+              Onboarding Progress Portal
+            </h2>
+            <p className="text-xs text-slate-400">Real-time tracker for your vendor validation and onboarding status</p>
+          </div>
+          {profileStatus && profileStatus !== 'Sent' && (
+            <div className="text-xs text-slate-500 font-mono bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg self-start">
+              ID: {submittedVendorId || 'N/A'}
+            </div>
+          )}
+        </div>
+
+        {/* Main Status Showcase Card (Glassmorphism) */}
+        <div className={`p-6 md:p-8 rounded-2xl border bg-gradient-to-br ${statusThemeClass} shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center gap-6`}>
+          {/* Animated Background Pulse */}
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-current opacity-5 rounded-full blur-3xl" />
+          
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-inner shrink-0">
+            <StatusIcon className="w-10 h-10 animate-pulse" />
+          </div>
+
+          <div className="space-y-2 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] tracking-wider uppercase font-black px-2 py-0.5 bg-slate-900/60 rounded border border-slate-800/40">
+                CURRENT STAGE
+              </span>
+              {isRejected && <span className="bg-rose-900/60 text-rose-305 text-[10px] font-bold px-2 py-0.5 rounded border border-rose-500/20">Action Required</span>}
+            </div>
+            <h3 className="text-xl md:text-2xl font-extrabold text-slate-100">{statusHeader}</h3>
+            <p className="text-slate-300 text-xs md:text-sm leading-relaxed max-w-2xl">{statusDesc}</p>
+          </div>
+        </div>
+
+        {/* Audit Rejection Review comments */}
+        {isRejected && (
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-md space-y-4">
+            <h4 className="text-xs tracking-wider uppercase font-black text-rose-400 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+              Compliance Rejection Comments
+            </h4>
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 text-slate-300 italic font-mono text-xs leading-relaxed">
+              "{profileComments || 'No audit comments provided.'}"
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={() => navigateTo('vendorUpdate')}
+                className="w-full md:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-extrabold transition shadow-lg hover:shadow-indigo-500/20 flex items-center justify-center gap-2"
+              >
+                <span>Edit & Resubmit Form</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Premium Tracking Timeline Stepper */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-10 shadow-md">
+          <h4 className="text-xs tracking-wider uppercase font-black text-slate-400 mb-8">
+            Onboarding Timeline Pipeline
+          </h4>
+          
+          <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-8 md:gap-4">
+            {/* Horizontal Timeline Connector (visible on desktop) */}
+            <div className="absolute top-[18px] left-[5%] right-[5%] h-0.5 bg-slate-800 hidden md:block z-0" />
+            {/* Active Horizontal line */}
+            {activeIndex > 0 && (
+              <div 
+                className="absolute top-[18px] left-[5%] h-0.5 bg-gradient-to-r from-emerald-500 to-indigo-500 hidden md:block z-0 transition-all duration-500" 
+                style={{ width: `${(activeIndex / 3) * 90}%` }}
+              />
+            )}
+
+            {stepsList.map((st, idx) => {
+              const isPast = idx < activeIndex;
+              const isCurrent = idx === activeIndex;
+
+              let circleStyle = 'bg-slate-950 border-slate-800 text-slate-500';
+              let textTitleStyle = 'text-slate-500';
+              let lineConnectorColor = 'bg-slate-850';
+
+              if (isPast) {
+                circleStyle = 'bg-emerald-950 border-emerald-500 text-emerald-450 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
+                textTitleStyle = 'text-emerald-450';
+                lineConnectorColor = 'bg-emerald-500';
+              } else if (isCurrent) {
+                if (isRejected) {
+                  circleStyle = 'bg-rose-955 border-rose-500 text-rose-455 shadow-[0_0_15px_rgba(239,68,68,0.2)] animate-pulse';
+                  textTitleStyle = 'text-rose-400 font-extrabold';
+                } else if (isApproved) {
+                  circleStyle = 'bg-emerald-950 border-emerald-500 text-emerald-450 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
+                  textTitleStyle = 'text-emerald-450';
+                } else {
+                  circleStyle = 'bg-indigo-950 border-indigo-500 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]';
+                  textTitleStyle = 'text-indigo-455 font-extrabold';
+                }
+              }
+
+              return (
+                <div key={st.label} className="flex-1 flex flex-row md:flex-col items-center md:text-center gap-4 relative z-10 w-full">
+                  {/* Vertical Timeline Connector (visible on mobile) */}
+                  {idx < 3 && (
+                    <div className={`absolute left-[18px] top-9 bottom-[-32px] w-0.5 ${lineConnectorColor} md:hidden z-0`} />
+                  )}
+
+                  {/* Circular Step Node with Pulsating Halo */}
+                  <div className="relative shrink-0">
+                    {isCurrent && !isApproved && (
+                      <div className="absolute inset-0 rounded-full bg-current opacity-20 blur-md animate-ping" />
+                    )}
+                    <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center font-black text-xs transition-all duration-300 relative z-10 ${circleStyle}`}>
+                      {isPast ? '✓' : idx + 1}
+                    </div>
+                  </div>
+
+                  {/* Step Descriptions */}
+                  <div className="space-y-1">
+                    <div className={`text-xs md:text-sm font-bold tracking-tight ${textTitleStyle}`}>
+                      {st.label}
+                    </div>
+                    <div className="text-[10px] md:text-xs text-slate-500 leading-normal max-w-[160px] md:mx-auto">
+                      {st.description}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Secondary Info Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-3">
+            <h5 className="text-xs tracking-wider uppercase font-black text-slate-400">Onboarding Quick Links</h5>
+            <div className="space-y-2 pt-1 text-xs">
+              <button 
+                onClick={() => navigateTo('vendorUpdate')}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-slate-800 transition text-slate-300 font-medium"
+              >
+                <span>Browse Form Submission</span>
+                <span className="text-[10px] font-black text-indigo-400 uppercase">Review Details</span>
+              </button>
+              <button 
+                onClick={() => navigateTo('vendorForm')}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-slate-800 transition text-slate-300 font-medium"
+              >
+                <span>Onboarding Form Steps</span>
+                <span className="text-[10px] font-black text-indigo-400 uppercase">View Layout</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-3">
+            <h5 className="text-xs tracking-wider uppercase font-black text-slate-400">Verification Steps & Timeline</h5>
+            <div className="space-y-3 text-[11px] text-slate-400 pt-1 leading-relaxed">
+              <div className="flex gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-450 mt-1.5 shrink-0" />
+                <span><strong>L2 Compliance Auditor:</strong> Audits documents, bank details, tax filings, and certifications.</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-455 mt-1.5 shrink-0" />
+                <span><strong>L1 Senior Director:</strong> Provides final executive onboarding signature and uploads data into ERP.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between py-10 px-4">
       <div className="max-w-4xl w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-10">
         
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 flex flex-col items-center">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-100">
             {entityName} Registration Form
           </h1>
           <p className="text-slate-400 mt-2">To be filled up by the concerned {entityNameLower}/department. (* indicates mandatory)</p>
+          {userRole === 'Vendor' && profileStatus === 'Sent' && (
+            <div className="mt-4">
+              <span className="px-3 py-1 bg-indigo-950/60 text-indigo-400 border border-indigo-800/40 rounded-full text-xs font-bold inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                Status: Invitation Sent (Awaiting Submission)
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Progress Tracker */}
@@ -345,6 +739,7 @@ export default function OnboardingForm({ type = 'vendor' }) {
           </div>
         ) : (
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+            <fieldset disabled={isReadOnly} className="space-y-6 border-0 p-0 m-0">
             
             {/* STEP 1: General Details */}
             {step === 1 && (
@@ -362,8 +757,9 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       name="email"
                       value={formData.email}
                       onChange={handleTextChange}
+                      disabled={userRole === 'Vendor' && !!currentUser}
                       placeholder={`e.g. ${entityNameLower}@company.com`}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-900"
                     />
                   </div>
 
@@ -499,8 +895,9 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       name="email"
                       value={formData.primaryContact.email}
                       onChange={(e) => handleTextChange(e, ['primaryContact'])}
-                      placeholder="e.g. contact@company.com"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                      disabled={userRole === 'Vendor' && !!currentUser}
+                      placeholder="e.g. manager@yourcompany.com"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-900"
                     />
                   </div>
 
@@ -780,13 +1177,20 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       className="hidden" 
                       id="pan-file-input" 
                     />
-                    <label htmlFor="pan-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
-                      <UploadCloud className="w-4 h-4" />
-                      <span>{uploadedFiles.panFile ? 'Change File' : 'Select Document'}</span>
-                    </label>
+                    {!isReadOnly && (
+                      <label htmlFor="pan-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
+                        <UploadCloud className="w-4 h-4" />
+                        <span>{uploadedFiles.panFile ? 'Change File' : 'Select Document'}</span>
+                      </label>
+                    )}
                     {uploadedFiles.panFile && (
                       <div className="text-[11px] text-emerald-400 font-bold mt-2 truncate">
                         ✓ {uploadedFiles.panFile.name}
+                      </div>
+                    )}
+                    {!uploadedFiles.panFile && formData.panFileUrl && (
+                      <div className="text-[11px] text-indigo-400 font-bold mt-2 truncate">
+                        ✓ Document Uploaded (<a href={formData.panFileUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-305">View Document</a>)
                       </div>
                     )}
                   </div>
@@ -802,13 +1206,20 @@ export default function OnboardingForm({ type = 'vendor' }) {
                         className="hidden" 
                         id="gst-file-input" 
                       />
-                      <label htmlFor="gst-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
-                        <UploadCloud className="w-4 h-4" />
-                        <span>{uploadedFiles.gstFile ? 'Change File' : 'Select Document'}</span>
-                      </label>
+                      {!isReadOnly && (
+                        <label htmlFor="gst-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
+                          <UploadCloud className="w-4 h-4" />
+                          <span>{uploadedFiles.gstFile ? 'Change File' : 'Select Document'}</span>
+                        </label>
+                      )}
                       {uploadedFiles.gstFile && (
                         <div className="text-[11px] text-emerald-400 font-bold mt-2 truncate">
                           ✓ {uploadedFiles.gstFile.name}
+                        </div>
+                      )}
+                      {!uploadedFiles.gstFile && formData.gstFileUrl && (
+                        <div className="text-[11px] text-indigo-400 font-bold mt-2 truncate">
+                          ✓ Document Uploaded (<a href={formData.gstFileUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-305">View Document</a>)
                         </div>
                       )}
                     </div>
@@ -824,13 +1235,20 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       className="hidden" 
                       id="reg-file-input" 
                     />
-                    <label htmlFor="reg-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
-                      <UploadCloud className="w-4 h-4" />
-                      <span>{uploadedFiles.regFile ? 'Change File' : 'Select Document'}</span>
-                    </label>
+                    {!isReadOnly && (
+                      <label htmlFor="reg-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
+                        <UploadCloud className="w-4 h-4" />
+                        <span>{uploadedFiles.regFile ? 'Change File' : 'Select Document'}</span>
+                      </label>
+                    )}
                     {uploadedFiles.regFile && (
                       <div className="text-[11px] text-emerald-400 font-bold mt-2 truncate">
                         ✓ {uploadedFiles.regFile.name}
+                      </div>
+                    )}
+                    {!uploadedFiles.regFile && formData.regFileUrl && (
+                      <div className="text-[11px] text-indigo-400 font-bold mt-2 truncate">
+                        ✓ Document Uploaded (<a href={formData.regFileUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-305">View Document</a>)
                       </div>
                     )}
                   </div>
@@ -845,13 +1263,20 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       className="hidden" 
                       id="cheque-file-input" 
                     />
-                    <label htmlFor="cheque-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
-                      <UploadCloud className="w-4 h-4" />
-                      <span>{uploadedFiles.chequeFile ? 'Change File' : 'Select Document'}</span>
-                    </label>
+                    {!isReadOnly && (
+                      <label htmlFor="cheque-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
+                        <UploadCloud className="w-4 h-4" />
+                        <span>{uploadedFiles.chequeFile ? 'Change File' : 'Select Document'}</span>
+                      </label>
+                    )}
                     {uploadedFiles.chequeFile && (
                       <div className="text-[11px] text-emerald-400 font-bold mt-2 truncate">
                         ✓ {uploadedFiles.chequeFile.name}
+                      </div>
+                    )}
+                    {!uploadedFiles.chequeFile && formData.chequeFileUrl && (
+                      <div className="text-[11px] text-indigo-400 font-bold mt-2 truncate">
+                        ✓ Document Uploaded (<a href={formData.chequeFileUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-305">View Document</a>)
                       </div>
                     )}
                   </div>
@@ -866,13 +1291,20 @@ export default function OnboardingForm({ type = 'vendor' }) {
                       className="hidden" 
                       id="iso-file-input" 
                     />
-                    <label htmlFor="iso-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
-                      <UploadCloud className="w-4 h-4" />
-                      <span>{uploadedFiles.isoFile ? 'Change File' : 'Select Document'}</span>
-                    </label>
+                    {!isReadOnly && (
+                      <label htmlFor="iso-file-input" className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition">
+                        <UploadCloud className="w-4 h-4" />
+                        <span>{uploadedFiles.isoFile ? 'Change File' : 'Select Document'}</span>
+                      </label>
+                    )}
                     {uploadedFiles.isoFile && (
                       <div className="text-[11px] text-emerald-400 font-bold mt-2 truncate">
                         ✓ {uploadedFiles.isoFile.name}
+                      </div>
+                    )}
+                    {!uploadedFiles.isoFile && formData.isoFileUrl && (
+                      <div className="text-[11px] text-indigo-400 font-bold mt-2 truncate">
+                        ✓ Document Uploaded (<a href={formData.isoFileUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-305">View Document</a>)
                       </div>
                     )}
                   </div>
@@ -923,7 +1355,7 @@ export default function OnboardingForm({ type = 'vendor' }) {
                   <span>Continue</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
-              ) : (
+              ) : !isReadOnly ? (
                 <button
                   type="button"
                   onClick={handleSubmit}
@@ -945,9 +1377,13 @@ export default function OnboardingForm({ type = 'vendor' }) {
                     </>
                   )}
                 </button>
+              ) : (
+                <div className="text-xs font-bold text-slate-505 border border-slate-800 bg-slate-950/40 rounded-xl px-4 py-2.5">
+                  ✓ Review Mode Only
+                </div>
               )}
             </div>
-
+            </fieldset>
           </form>
         )}
 

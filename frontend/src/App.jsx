@@ -4,7 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import UsersSettings from './pages/UsersSettings';
 import ResetPassword from './pages/ResetPassword';
-import { ShieldCheck, UserPlus, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { ShieldCheck, UserPlus, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Users, FileText } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from './config';
 
 export default function App() {
@@ -20,6 +20,7 @@ export default function App() {
   const [adminUser, setAdminUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [passwordResetRequired, setPasswordResetRequired] = useState(false);
+  const [vendorStatus, setVendorStatus] = useState(null);
 
 
   const handleLoginSuccess = (newToken, username, role, resetRequired) => {
@@ -30,8 +31,8 @@ export default function App() {
     setUserRole(role);
     setPasswordResetRequired(!!resetRequired);
     if (role === 'Vendor') {
-      setCurrentPage('form');
-      window.location.hash = '/form';
+      setCurrentPage('vendorStatus');
+      window.location.hash = '/vendor-status';
     } else {
       setCurrentPage('admin');
       window.location.hash = '/admin';
@@ -99,8 +100,8 @@ export default function App() {
         setUserRole(payloadDecoded.role);
         setPasswordResetRequired(!!payloadDecoded.passwordResetRequired);
         if (payloadDecoded.role === 'Vendor') {
-          setCurrentPage('form');
-          window.location.hash = '/form';
+          setCurrentPage('vendorStatus');
+          window.location.hash = '/vendor-status';
         }
       } catch (e) {
         localStorage.removeItem('admin_token');
@@ -109,15 +110,48 @@ export default function App() {
     }
   }, []);
 
+  // Fetch vendor status for custom portal navigation mapping
+  useEffect(() => {
+    const checkVendorStatus = async () => {
+      if (userRole !== 'Vendor' || !token) return;
+      try {
+        const res = await apiFetch(`${API_BASE_URL}/api/vendors/my-profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setVendorStatus(data.status);
+          if (data.status === 'Sent') {
+            setCurrentPage('vendorForm');
+            window.location.hash = '/vendor-form';
+          } else {
+            setCurrentPage('vendorStatus');
+            window.location.hash = '/vendor-status';
+          }
+        }
+      } catch (err) {
+        console.error('Error checking vendor status in App:', err);
+      }
+    };
+    checkVendorStatus();
+  }, [token, userRole]);
+
   // Handle URL hash changes for back-button compatibility
   useEffect(() => {
     const handleHashChange = () => {
+      const hash = window.location.hash;
       if (userRole === 'Vendor') {
-        setCurrentPage('form');
-        window.location.hash = '/form';
+        if (hash === '#/vendor-form' || hash === '#/form') {
+          setCurrentPage('vendorForm');
+        } else if (hash === '#/vendor-update' || hash === '#/update-form') {
+          setCurrentPage('vendorUpdateForm');
+        } else {
+          setCurrentPage('vendorStatus');
+        }
         return;
       }
-      const hash = window.location.hash;
       if (hash === '#/form' || hash === '#/vendor-form') {
         setCurrentPage('form');
       } else if (hash === '#/customer-form') {
@@ -138,8 +172,16 @@ export default function App() {
 
   const navigateTo = (page) => {
     if (userRole === 'Vendor') {
-      setCurrentPage('form');
-      window.location.hash = '/form';
+      if (page === 'vendorForm') {
+        window.location.hash = '/vendor-form';
+        setCurrentPage('vendorForm');
+      } else if (page === 'vendorUpdate') {
+        window.location.hash = '/vendor-update';
+        setCurrentPage('vendorUpdateForm');
+      } else {
+        window.location.hash = '/vendor-status';
+        setCurrentPage('vendorStatus');
+      }
       return;
     }
     if (page === 'form') {
@@ -208,56 +250,98 @@ export default function App() {
 
           {/* Navigation Options */}
           <nav className="p-3 space-y-1">
-            {userRole !== 'Vendor' && (
-              <button
-                onClick={() => navigateTo('admin')}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'admin'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                title="Admin Panel"
-              >
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span>Admin Panel</span>}
-              </button>
-            )}
+            {userRole === 'Vendor' ? (
+              <>
+                <button
+                  onClick={() => navigateTo('vendorForm')}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorForm'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  title="Vendor Form"
+                >
+                  <UserPlus className="w-4 h-4 shrink-0 text-indigo-500" />
+                  {!sidebarCollapsed && <span>Vendor Form</span>}
+                </button>
+                <button
+                  onClick={() => navigateTo('vendorUpdate')}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorUpdateForm'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  title="Update Form"
+                >
+                  <FileText className="w-4 h-4 shrink-0 text-amber-500" />
+                  {!sidebarCollapsed && <span>Update Form</span>}
+                </button>
+                <button
+                  onClick={() => navigateTo('vendorStatus')}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorStatus'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  title="Form Status"
+                >
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-purple-500" />
+                  {!sidebarCollapsed && <span>Form Status</span>}
+                </button>
+              </>
+            ) : (
+              <>
+                {userRole !== 'Vendor' && (
+                  <button
+                    onClick={() => navigateTo('admin')}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'admin'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    title="Admin Panel"
+                  >
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    {!sidebarCollapsed && <span>Admin Panel</span>}
+                  </button>
+                )}
 
-            <button
-              onClick={() => navigateTo('form')}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'form'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              title="Vendor Form"
-            >
-              <UserPlus className="w-4 h-4 shrink-0 text-indigo-500" />
-              {!sidebarCollapsed && <span>Vendor Form</span>}
-            </button>
+                <button
+                  onClick={() => navigateTo('form')}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'form'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  title="Vendor Form"
+                >
+                  <UserPlus className="w-4 h-4 shrink-0 text-indigo-500" />
+                  {!sidebarCollapsed && <span>Vendor Form</span>}
+                </button>
 
-            <button
-              onClick={() => navigateTo('customerForm')}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'customerForm'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              title="Customer Form"
-            >
-              <UserPlus className="w-4 h-4 shrink-0 text-emerald-500" />
-              {!sidebarCollapsed && <span>Customer Form</span>}
-            </button>
+                {userRole !== 'Vendor' && (
+                  <button
+                    onClick={() => navigateTo('customerForm')}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'customerForm'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    title="Customer Form"
+                  >
+                    <UserPlus className="w-4 h-4 shrink-0 text-emerald-500" />
+                    {!sidebarCollapsed && <span>Customer Form</span>}
+                  </button>
+                )}
 
-            {userRole === 'Admin' && (
-              <button
-                onClick={() => navigateTo('users')}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'users'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                title="User Settings"
-              >
-                <Users className="w-4 h-4 shrink-0 text-indigo-500" />
-                {!sidebarCollapsed && <span>User Settings</span>}
-              </button>
+                {userRole === 'Admin' && (
+                  <button
+                    onClick={() => navigateTo('users')}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'users'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    title="User Settings"
+                  >
+                    <Users className="w-4 h-4 shrink-0 text-indigo-500" />
+                    {!sidebarCollapsed && <span>User Settings</span>}
+                  </button>
+                )}
+              </>
             )}
           </nav>
         </div>
@@ -279,14 +363,30 @@ export default function App() {
 
       {/* Main Panel Content Area */}
       <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200">
-        {currentPage === 'form' ? (
-          <OnboardingForm type="vendor" />
-        ) : currentPage === 'customerForm' ? (
-          <OnboardingForm type="customer" />
-        ) : currentPage === 'users' ? (
-          <UsersSettings token={token} />
+        {userRole === 'Vendor' ? (
+          <>
+            {currentPage === 'vendorForm' && (
+              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceFormView={true} navigateTo={navigateTo} />
+            )}
+            {currentPage === 'vendorUpdateForm' && (
+              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceUpdateView={true} navigateTo={navigateTo} />
+            )}
+            {currentPage === 'vendorStatus' && (
+              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceStatusView={true} navigateTo={navigateTo} />
+            )}
+          </>
         ) : (
-          <Dashboard token={token} userRole={userRole} onLogout={handleLogout} />
+          <>
+            {currentPage === 'form' ? (
+              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} />
+            ) : currentPage === 'customerForm' ? (
+              <OnboardingForm type="customer" currentUser={adminUser} userRole={userRole} />
+            ) : currentPage === 'users' ? (
+              <UsersSettings token={token} />
+            ) : (
+              <Dashboard token={token} userRole={userRole} onLogout={handleLogout} />
+            )}
+          </>
         )}
       </main>
     </div>

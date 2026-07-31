@@ -575,15 +575,36 @@ export default function Dashboard({ token, userRole, onLogout }) {
                         </span>
                       </td>
                       <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${vendor.status === 'Approved' && 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/50'
-                          } ${vendor.status === 'Pending' && 'bg-amber-950/40 text-amber-400 border border-amber-800/50'
-                          } ${vendor.status === 'Rejected' && 'bg-rose-950/40 text-rose-400 border border-rose-800/50'
-                          }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${vendor.status === 'Approved' ? 'bg-emerald-400' :
-                            vendor.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-400'
-                            }`} />
-                          {vendor.status}
-                        </span>
+                        {(() => {
+                          let label = vendor.status;
+                          let bgClasses = 'bg-slate-950 text-slate-500 border border-slate-850';
+                          let dotClass = 'bg-slate-500';
+
+                          if (vendor.status === 'Approved') {
+                            label = 'Approved & Onboarded';
+                            bgClasses = 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/50';
+                            dotClass = 'bg-emerald-400';
+                          } else if (vendor.status === 'Pending') {
+                            label = 'Awaiting L2 Review';
+                            bgClasses = 'bg-indigo-950/40 text-indigo-400 border border-indigo-800/50';
+                            dotClass = 'bg-indigo-400';
+                          } else if (vendor.status === 'L2_Approved') {
+                            label = 'Awaiting L1 Review';
+                            bgClasses = 'bg-amber-955/40 text-amber-400 border border-amber-800/50';
+                            dotClass = 'bg-amber-400';
+                          } else if (vendor.status === 'Rejected') {
+                            label = 'Rejected';
+                            bgClasses = 'bg-rose-950/40 text-rose-400 border border-rose-800/50';
+                            dotClass = 'bg-rose-400';
+                          }
+
+                          return (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${bgClasses}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-right pr-6">
                         <button
@@ -764,12 +785,30 @@ export default function Dashboard({ token, userRole, onLogout }) {
               {/* Header Title */}
               <div className="flex justify-between items-start">
                 <div className="flex-1 mr-4">
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold inline-block border ${selectedVendor.status === 'Approved' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800/50' :
-                    selectedVendor.status === 'Pending' ? 'bg-amber-950/40 text-amber-400 border-amber-800/50' :
-                      'bg-rose-950/40 text-rose-400 border-rose-800/50'
-                    }`}>
-                    {selectedVendor.status}
-                  </span>
+                  {(() => {
+                    let label = selectedVendor.status;
+                    let bgClasses = 'bg-rose-950/40 text-rose-400 border-rose-800/50';
+
+                    if (selectedVendor.status === 'Approved') {
+                      label = 'Approved & Onboarded';
+                      bgClasses = 'bg-emerald-950/40 text-emerald-400 border-emerald-800/50';
+                    } else if (selectedVendor.status === 'Pending') {
+                      label = 'Awaiting L2 Review';
+                      bgClasses = 'bg-indigo-950/40 text-indigo-400 border-indigo-800/50';
+                    } else if (selectedVendor.status === 'L2_Approved') {
+                      label = 'Awaiting L1 Review';
+                      bgClasses = 'bg-amber-955/40 text-amber-400 border-amber-800/50';
+                    } else if (selectedVendor.status === 'Rejected') {
+                      label = 'Rejected';
+                      bgClasses = 'bg-rose-950/40 text-rose-400 border-rose-800/50';
+                    }
+
+                    return (
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold inline-block border ${bgClasses}`}>
+                        {label}
+                      </span>
+                    );
+                  })()}
 
                   {!isEditing ? (
                     <>
@@ -1474,7 +1513,9 @@ export default function Dashboard({ token, userRole, onLogout }) {
             {/* Action Bar */}
             <div className="p-6 bg-slate-950 border-t border-slate-800 space-y-4">
               {/* Comment text area */}
-              {!isEditing && selectedVendor.status === 'Pending' && (
+              {!isEditing && (selectedVendor.status === 'Pending' || selectedVendor.status === 'L2_Approved') && 
+                ((selectedVendor.status === 'Pending' && (userRole === 'Approver L2' || userRole === 'Admin')) ||
+                 (selectedVendor.status === 'L2_Approved' && (userRole === 'Approver L1' || userRole === 'Admin'))) && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-2">Review Comments / Rejection Reasons</label>
                   <textarea
@@ -1506,24 +1547,35 @@ export default function Dashboard({ token, userRole, onLogout }) {
                       {editLoading ? 'Saving...' : 'Save Changes'}
                     </button>
                   </>
-                ) : selectedVendor.status === 'Pending' ? (
+                ) : (selectedVendor.status === 'Pending' || selectedVendor.status === 'L2_Approved') ? (
                   <>
-                    <button
-                      onClick={() => handleStatusUpdate(selectedVendor.id, 'Rejected')}
-                      disabled={actionLoading}
-                      className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-rose-600/10 flex items-center gap-1.5"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Reject Application
-                    </button>
-                    <button
-                      onClick={() => handleStatusUpdate(selectedVendor.id, 'Approved')}
-                      disabled={actionLoading}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/10 flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Approve & Onboard
-                    </button>
+                    {((selectedVendor.status === 'Pending' && (userRole === 'Approver L2' || userRole === 'Admin')) ||
+                      (selectedVendor.status === 'L2_Approved' && (userRole === 'Approver L1' || userRole === 'Admin'))) ? (
+                      <>
+                        <button
+                          onClick={() => handleStatusUpdate(selectedVendor.id, 'Rejected')}
+                          disabled={actionLoading}
+                          className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-rose-600/10 flex items-center gap-1.5"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Reject Application
+                        </button>
+                        <button
+                          onClick={() => handleStatusUpdate(selectedVendor.id, 'Approved')}
+                          disabled={actionLoading}
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/10 flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          {selectedVendor.status === 'Pending' ? 'Verify & Send to L1' : 'Final Approve & Onboard'}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-sm font-semibold text-slate-500 py-2">
+                        {selectedVendor.status === 'Pending' 
+                          ? 'Awaiting Level 2 Initial Review (Read Only).' 
+                          : 'Awaiting Level 1 Senior Approval (Read Only).'}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <button

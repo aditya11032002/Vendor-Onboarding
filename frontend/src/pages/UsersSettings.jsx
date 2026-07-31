@@ -11,7 +11,7 @@ export default function UsersSettings({ token }) {
   // Form State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Approver');
+  const [role, setRole] = useState('Approver L2');
   const [formLoading, setFormLoading] = useState(false);
 
   // Fetch all users
@@ -75,7 +75,7 @@ export default function UsersSettings({ token }) {
       setSuccess(`User "${username}" was created successfully.`);
       setUsername('');
       setPassword('');
-      setRole('Approver');
+      setRole('Approver L2');
       fetchUsers(); // Refresh list
     } catch (err) {
       setError(err.message || 'Failed to create user.');
@@ -193,7 +193,8 @@ export default function UsersSettings({ token }) {
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-white border border-slate-200 text-slate-805 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="Approver">Approver</option>
+                  <option value="Approver L2">Approver L2 (First-Level Reviewer)</option>
+                  <option value="Approver L1">Approver L1 (Senior/Final Approver)</option>
                   <option value="Admin">Admin (Full Access)</option>
                   <option value="Vendor">Vendor (Access to Vendor Form only)</option>
                 </select>

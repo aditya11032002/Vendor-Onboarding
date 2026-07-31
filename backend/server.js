@@ -114,42 +114,7 @@ const pool = new Pool({
 const initializeDatabase = async () => {
   try {
     await dbService.initializeDatabaseSchema(pool);
-    console.log('PostgreSQL vendors table checked/initialized successfully.');
-
-    // Initialize PostgreSQL customers table
-    const createCustomersTableQuery = `
-      CREATE TABLE IF NOT EXISTS customers (
-        id UUID PRIMARY KEY,
-        "legalName" VARCHAR(255) NOT NULL,
-        "tradeName" VARCHAR(255),
-        "entityType" VARCHAR(100),
-        "dateOfIncorporation" VARCHAR(100),
-        cin VARCHAR(100),
-        llpin VARCHAR(100),
-        pan VARCHAR(50) NOT NULL,
-        "gstStatus" VARCHAR(100),
-        gstin VARCHAR(100),
-        "msmeStatus" VARCHAR(50),
-        "udyamNumber" VARCHAR(100),
-        "registeredAddress" JSONB,
-        "billingAddress" JSONB,
-        "primaryContact" JSONB,
-        "financeContact" JSONB,
-        "bankDetails" JSONB,
-        "panVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
-        "gstVerificationStatus" VARCHAR(50) DEFAULT 'Unverified',
-        "verificationLogs" JSONB DEFAULT '{}'::jsonb,
-        status VARCHAR(50) DEFAULT 'Pending',
-        comments TEXT,
-        "googleFormResponseId" VARCHAR(255),
-        "panFileUrl" TEXT,
-        "gstFileUrl" TEXT,
-        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createCustomersTableQuery);
-    console.log('PostgreSQL customers table checked/initialized successfully.');
+    console.log('PostgreSQL database tables checked/initialized successfully.');
 
     // Seed default administrator if users table is empty
     const usersCheck = await pool.query('SELECT COUNT(*) FROM users');
@@ -441,10 +406,32 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully.' });
 });
 
+// 0.5. Get vendor profile status (For Vendor Portal self-lookup)
+app.get('/api/vendors/my-profile', authenticateUser, async (req, res) => {
+  try {
+    const query = `
+      SELECT *
+      FROM vendors
+      WHERE LOWER("primaryContact"->>'email') = $1
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    `;
+    const result = await pool.query(query, [req.user.username.toLowerCase()]);
+    if (result.rows.length > 0) {
+      return res.json(result.rows[0]);
+    }
+    return res.json({ status: 'Sent' });
+  } catch (error) {
+    console.error('Error fetching my-profile status:', error);
+    res.status(500).json({ message: 'Internal server error fetching application status.' });
+  }
+});
+
 // 1. Get all vendors (with server-side pagination, search, and filters)
 app.get('/api/vendors', authenticateAdmin, async (req, res) => {
   try {
-    const result = await dbService.getPaginatedVendors(pool, req.query);
+    const queryParams = { ...req.query, role: req.user.role };
+    const result = await dbService.getPaginatedVendors(pool, queryParams);
     res.json(result);
   } catch (error) {
     console.error('Error fetching vendors:', error);
@@ -639,7 +626,7 @@ app.post('/api/vendors', upload.fields([
   }
 });
 
-// 4. Update vendor status and comments (From Admin Dashboard)
+// 4. Update vendor status and comments (From Admin Dashboard - Dynamic 2-Level Approval)
 app.patch('/api/vendors/:id/status', authenticateAdmin, async (req, res) => {
   const { status, comments } = req.body;
   const validStatuses = ['Pending', 'Approved', 'Rejected'];
@@ -649,7 +636,34 @@ app.patch('/api/vendors/:id/status', authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const updatedVendor = await dbService.updateVendorStatus(pool, req.params.id, status, comments);
+    const currentVendor = await dbService.getVendorById(pool, req.params.id);
+    if (!currentVendor) {
+      return res.status(404).json({ message: 'Vendor not found' });
+    }
+
+    // Role-based Maker-Checker stage enforcement
+    if (req.user.role === 'Approver L1' && currentVendor.status === 'Pending') {
+      return res.status(400).json({
+        message: 'Forbidden. This profile must first be verified by Approver L2 before L1 senior approval.'
+      });
+    }
+
+    if (req.user.role === 'Approver L2' && currentVendor.status === 'L2_Approved') {
+      return res.status(400).json({
+        message: 'Forbidden. This profile is already verified and awaiting senior L1 approval.'
+      });
+    }
+
+    let targetStatus = status;
+    if (status === 'Approved') {
+      if (req.user.role === 'Approver L2') {
+        targetStatus = 'L2_Approved';
+      } else {
+        targetStatus = 'Approved';
+      }
+    }
+
+    const updatedVendor = await dbService.updateVendorStatus(pool, req.params.id, targetStatus, comments);
     res.json(updatedVendor);
   } catch (error) {
     console.error('Error updating vendor status:', error, req.params.id);
@@ -680,6 +694,77 @@ app.post('/api/webhook/google-form', async (req, res) => {
   }
 });
 
+// --- SAP ERP Integration Endpoints (Admin Only) ---
+
+// 1. Get L1 approved queue (vendors and customers with status = 'Approved')
+app.get('/api/integration/sap-queue', authenticateAdmin, requireAdmin, async (req, res) => {
+  try {
+    const vendorsResult = await pool.query(
+      `SELECT id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan, "gstStatus", gstin, "msmeStatus", "udyamNumber", "primaryContact", "financeContact", "bankDetails", "registeredAddress", "billingAddress", status, "createdAt", "panFileUrl", "gstFileUrl"
+       FROM vendors 
+       WHERE status = 'Approved' 
+       ORDER BY "createdAt" ASC`
+    );
+
+    const customersResult = await pool.query(
+      `SELECT id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan, "gstStatus", gstin, "msmeStatus", "udyamNumber", "primaryContact", "financeContact", "bankDetails", "registeredAddress", "billingAddress", status, "createdAt", "panFileUrl", "gstFileUrl"
+       FROM customers 
+       WHERE status = 'Approved' 
+       ORDER BY "createdAt" ASC`
+    );
+
+    res.json({
+      success: true,
+      vendors: vendorsResult.rows,
+      customers: customersResult.rows
+    });
+  } catch (error) {
+    console.error('Error fetching SAP queue:', error);
+    res.status(500).json({ message: 'Internal server error while fetching SAP queue.' });
+  }
+});
+
+// 2. Mark profile as synced/integrated to SAP ERP
+app.post('/api/integration/mark-synced', authenticateAdmin, requireAdmin, async (req, res) => {
+  const { id, type } = req.body; // type is 'vendor' or 'customer'
+  if (!id || !type) {
+    return res.status(400).json({ message: 'Missing record id or type (vendor/customer).' });
+  }
+
+  try {
+    if (type === 'vendor') {
+      const result = await pool.query(
+        `UPDATE vendors 
+         SET status = 'Vendor Created', "updatedAt" = NOW(), comments = 'Successfully integrated into SAP ERP.'
+         WHERE id = $1 AND status = 'Approved'
+         RETURNING id, status`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Approved vendor not found with the specified ID.' });
+      }
+      return res.json({ success: true, message: 'Vendor status marked as Vendor Created in SAP.', record: result.rows[0] });
+    } else if (type === 'customer') {
+      const result = await pool.query(
+        `UPDATE customers 
+         SET status = 'Customer Created', "updatedAt" = NOW(), comments = 'Successfully integrated into ERP.'
+         WHERE id = $1 AND status = 'Approved'
+         RETURNING id, status`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Approved customer not found with the specified ID.' });
+      }
+      return res.json({ success: true, message: 'Customer status marked as Customer Created in ERP.', record: result.rows[0] });
+    } else {
+      return res.status(400).json({ message: 'Invalid type parameter. Must be "vendor" or "customer".' });
+    }
+  } catch (error) {
+    console.error('Error marking profile as synced:', error);
+    res.status(500).json({ message: 'Internal server error updating sync status.' });
+  }
+});
+
 // --- User Management API Endpoints (Admin Only) ---
 
 // List all users
@@ -695,11 +780,12 @@ app.get('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
 
 // --- Customer API Endpoints ---
 
-// 1. Get all customers
+// 1. Get all customers (with server-side pagination, search, and filters)
 app.get('/api/customers', authenticateAdmin, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM customers ORDER BY "createdAt" DESC');
-    res.json(result.rows);
+    const queryParams = { ...req.query, role: req.user.role };
+    const result = await dbService.getPaginatedCustomers(pool, queryParams);
+    res.json(result);
   } catch (error) {
     console.error('Error fetching customers:', error);
     res.status(500).json({ message: 'Internal server error while fetching customers.' });
@@ -720,67 +806,180 @@ app.get('/api/customers/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 3. Create a new customer (From Customer Onboarding Form)
-app.post('/api/customers', async (req, res) => {
-  const newCustomerData = req.body;
+// Public route to retrieve customer binary files from PostgreSQL
+app.get('/api/customers/files/:customerId/:fileKey', async (req, res) => {
+  const { customerId, fileKey } = req.params;
 
-  // Basic server-side validation
-  if (!newCustomerData.legalName || !newCustomerData.pan || !newCustomerData.primaryContact?.email) {
-    return res.status(400).json({ message: 'Legal Name, PAN, and Primary Email are required.' });
+  // Map keys to DB column names
+  const keyMap = {
+    pan: { data: 'panFileData', name: 'panFileName', mimetype: 'panFileMimetype' },
+    gst: { data: 'gstFileData', name: 'gstFileName', mimetype: 'gstFileMimetype' },
+    reg: { data: 'regFileData', name: 'regFileName', mimetype: 'regFileMimetype' },
+    cheque: { data: 'chequeFileData', name: 'chequeFileName', mimetype: 'chequeFileMimetype' },
+    iso: { data: 'isoFileData', name: 'isoFileName', mimetype: 'isoFileMimetype' }
+  };
+
+  const columns = keyMap[fileKey];
+  if (!columns) {
+    return res.status(400).json({ message: 'Invalid file key.' });
   }
 
-  const id = uuidv4();
-  const legalName = newCustomerData.legalName;
-  const tradeName = newCustomerData.tradeName || '';
-  const entityType = newCustomerData.entityType || 'Proprietorship';
-  const dateOfIncorporation = newCustomerData.dateOfIncorporation || '';
-  const cin = newCustomerData.cin || '';
-  const llpin = newCustomerData.llpin || '';
-  const pan = newCustomerData.pan.toUpperCase().trim();
-  const gstStatus = newCustomerData.gstStatus || 'Unregistered';
-  const gstin = newCustomerData.gstin ? newCustomerData.gstin.toUpperCase().trim() : '';
-  const msmeStatus = newCustomerData.msmeStatus || 'No';
-  const udyamNumber = newCustomerData.udyamNumber || '';
-  const registeredAddress = newCustomerData.registeredAddress || {};
-  const billingAddress = newCustomerData.billingAddress || {};
-  const primaryContact = newCustomerData.primaryContact || {};
-  const financeContact = newCustomerData.financeContact || {};
-  const bankDetails = newCustomerData.bankDetails || {};
-  const status = 'Pending';
-  const comments = 'Self-onboarded via portal. Awaiting review.';
-  const createdAt = new Date().toISOString();
-  const updatedAt = new Date().toISOString();
-
-  // Run mock Tax Identifier Verification
-  const verification = await verifyTaxIdentifiers(pan, gstin, legalName);
-
   try {
-    const query = `
-      INSERT INTO customers (
-        id, "legalName", "tradeName", "entityType", "dateOfIncorporation", cin, llpin, pan,
-        "gstStatus", gstin, "msmeStatus", "udyamNumber", "registeredAddress", "billingAddress",
-        "primaryContact", "financeContact", "bankDetails", "panVerificationStatus", "gstVerificationStatus",
-        "verificationLogs", status, comments, "createdAt", "updatedAt"
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
-      ) RETURNING *
-    `;
-    const values = [
-      id, legalName, tradeName, entityType, dateOfIncorporation, cin, llpin, pan,
-      gstStatus, gstin, msmeStatus, udyamNumber, JSON.stringify(registeredAddress), JSON.stringify(billingAddress),
-      JSON.stringify(primaryContact), JSON.stringify(financeContact), JSON.stringify(bankDetails),
-      verification.panVerificationStatus, verification.gstVerificationStatus, JSON.stringify(verification.verificationLogs),
-      status, comments, createdAt, updatedAt
-    ];
-    const result = await pool.query(query, values);
-    res.status(201).json(result.rows[0]);
+    const query = `SELECT "${columns.data}" as file_data, "${columns.name}" as file_name, "${columns.mimetype}" as mime_type FROM customers WHERE id = $1`;
+    const result = await pool.query(query, [customerId]);
+
+    if (result.rows.length === 0 || !result.rows[0].file_data) {
+      return res.status(404).json({ message: 'File not found.' });
+    }
+
+    const { file_data, file_name, mime_type } = result.rows[0];
+
+    // Set correct headers
+    res.set('Content-Type', mime_type || 'application/octet-stream');
+    res.set('Content-Disposition', `inline; filename="${encodeURIComponent(file_name || 'download')}"`);
+    res.send(file_data);
   } catch (error) {
-    console.error('Error inserting customer into DB:', error);
-    res.status(500).json({ message: 'Failed to write to database' });
+    console.error('Error serving customer file from DB:', error);
+    res.status(500).json({ message: 'Internal server error serving file.' });
   }
 });
 
-// 4. Update customer status and comments (From Admin Dashboard)
+// 3. Create a new customer (From custom React UI Form - Multi-file multipart upload)
+app.post('/api/customers', upload.fields([
+  { name: 'panFile', maxCount: 1 },
+  { name: 'gstFile', maxCount: 1 },
+  { name: 'regFile', maxCount: 1 },
+  { name: 'chequeFile', maxCount: 1 },
+  { name: 'isoFile', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const body = req.body;
+
+    // Parse nested object strings sent as multipart/form-data
+    const parseField = (field) => {
+      if (!field) return {};
+      if (typeof field === 'string') {
+        try { return JSON.parse(field); } catch (e) { return {}; }
+      }
+      return field;
+    };
+
+    const registeredAddress = parseField(body.registeredAddress);
+    const billingAddress = parseField(body.billingAddress);
+    const primaryContact = parseField(body.primaryContact);
+    const financeContact = parseField(body.financeContact);
+    const bankDetails = parseField(body.bankDetails);
+
+    const legalName = body.legalName;
+    const pan = body.pan ? body.pan.toUpperCase().trim() : '';
+    const primaryEmail = primaryContact.email || body.email || '';
+
+    if (!legalName || !pan || !primaryEmail) {
+      return res.status(400).json({ message: 'Legal Name, PAN, and Email Address are required.' });
+    }
+
+    const gstin = body.gstin ? body.gstin.toUpperCase().trim() : '';
+
+    // Run mock Tax Identifier Verification
+    const verification = await verifyTaxIdentifiers(pan, gstin, legalName);
+
+    // Pre-generate the customer UUID
+    const customerId = uuidv4();
+
+    // Resolve file upload URLs (custom DB file retriever endpoints)
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+    const hasPanFile = req.files && req.files.panFile && req.files.panFile[0];
+    const hasGstFile = req.files && req.files.gstFile && req.files.gstFile[0];
+    const hasRegFile = req.files && req.files.regFile && req.files.regFile[0];
+    const hasChequeFile = req.files && req.files.chequeFile && req.files.chequeFile[0];
+    const hasIsoFile = req.files && req.files.isoFile && req.files.isoFile[0];
+
+    const getExt = (filesObj, fieldName) => {
+      const file = filesObj && filesObj[fieldName] && filesObj[fieldName][0];
+      return file ? path.extname(file.originalname).toLowerCase() : '';
+    };
+
+    const panFileUrl = hasPanFile ? `${baseUrl}/api/customers/files/${customerId}/pan?ext=${getExt(req.files, 'panFile')}` : null;
+    const gstFileUrl = hasGstFile ? `${baseUrl}/api/customers/files/${customerId}/gst?ext=${getExt(req.files, 'gstFile')}` : null;
+    const regFileUrl = hasRegFile ? `${baseUrl}/api/customers/files/${customerId}/reg?ext=${getExt(req.files, 'regFile')}` : null;
+    const chequeFileUrl = hasChequeFile ? `${baseUrl}/api/customers/files/${customerId}/cheque?ext=${getExt(req.files, 'chequeFile')}` : null;
+    const isoFileUrl = hasIsoFile ? `${baseUrl}/api/customers/files/${customerId}/iso?ext=${getExt(req.files, 'isoFile')}` : null;
+
+    // Attach extra documents inside verificationLogs
+    verification.verificationLogs.uploadedDocuments = {
+      regFileUrl,
+      chequeFileUrl,
+      isoFileUrl
+    };
+
+    // Attach metadata
+    verification.verificationLogs.metadata = {
+      website: body.website || '',
+      isoCertified: body.isoCertified || 'No',
+      otherCertifications: body.otherCertifications || ''
+    };
+
+    const customerData = {
+      id: customerId,
+      legalName,
+      tradeName: body.tradeName || '',
+      entityType: body.entityType || 'Proprietorship',
+      dateOfIncorporation: body.dateOfIncorporation || '',
+      cin: body.cin || '',
+      llpin: body.llpin || '',
+      pan,
+      gstStatus: body.gstStatus || 'Unregistered',
+      gstin,
+      msmeStatus: body.msmeStatus || 'No',
+      udyamNumber: body.udyamNumber || '',
+      registeredAddress,
+      billingAddress,
+      primaryContact: {
+        ...primaryContact,
+        email: primaryEmail
+      },
+      financeContact,
+      bankDetails,
+      panVerificationStatus: verification.panVerificationStatus,
+      gstVerificationStatus: verification.gstVerificationStatus,
+      verificationLogs: verification.verificationLogs,
+      status: 'Pending',
+      comments: 'Self-onboarded via portal. Awaiting review.',
+      panFileUrl,
+      gstFileUrl,
+
+      // Pass binary data fields to PostgreSQL DB service
+      panFileData: hasPanFile ? req.files.panFile[0].buffer : null,
+      panFileName: hasPanFile ? req.files.panFile[0].originalname : null,
+      panFileMimetype: hasPanFile ? req.files.panFile[0].mimetype : null,
+
+      gstFileData: hasGstFile ? req.files.gstFile[0].buffer : null,
+      gstFileName: hasGstFile ? req.files.gstFile[0].originalname : null,
+      gstFileMimetype: hasGstFile ? req.files.gstFile[0].mimetype : null,
+
+      regFileData: hasRegFile ? req.files.regFile[0].buffer : null,
+      regFileName: hasRegFile ? req.files.regFile[0].originalname : null,
+      regFileMimetype: hasRegFile ? req.files.regFile[0].mimetype : null,
+
+      chequeFileData: hasChequeFile ? req.files.chequeFile[0].buffer : null,
+      chequeFileName: hasChequeFile ? req.files.chequeFile[0].originalname : null,
+      chequeFileMimetype: hasChequeFile ? req.files.chequeFile[0].mimetype : null,
+
+      isoFileData: hasIsoFile ? req.files.isoFile[0].buffer : null,
+      isoFileName: hasIsoFile ? req.files.isoFile[0].originalname : null,
+      isoFileMimetype: hasIsoFile ? req.files.isoFile[0].mimetype : null
+    };
+
+    const newCustomer = await dbService.createCustomer(pool, customerData);
+    res.status(201).json(newCustomer);
+  } catch (error) {
+    console.error('Error in customer self-onboarding:', error);
+    res.status(500).json({ message: 'Internal server error during customer onboarding.' });
+  }
+});
+
+// 4. Update customer status and comments (From Admin Dashboard - Dynamic 2-Level Approval)
 app.patch('/api/customers/:id/status', authenticateAdmin, async (req, res) => {
   const { status, comments } = req.body;
   const validStatuses = ['Pending', 'Approved', 'Rejected'];
@@ -790,111 +989,49 @@ app.patch('/api/customers/:id/status', authenticateAdmin, async (req, res) => {
   }
 
   try {
-    const selectResult = await pool.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    const selectResult = await pool.query('SELECT status FROM customers WHERE id = $1', [req.params.id]);
     if (selectResult.rows.length === 0) {
       return res.status(404).json({ message: 'Customer not found' });
     }
+    const currentStatus = selectResult.rows[0].status;
 
-    const currentCustomer = selectResult.rows[0];
-    const updatedComments = comments || currentCustomer.comments;
-    const updatedAt = new Date().toISOString();
+    // Role-based Maker-Checker stage enforcement
+    if (req.user.role === 'Approver L1' && currentStatus === 'Pending') {
+      return res.status(400).json({
+        message: 'Forbidden. This profile must first be verified by Approver L2 before L1 senior approval.'
+      });
+    }
 
-    const updateQuery = `
-      UPDATE customers
-      SET status = $1, comments = $2, "updatedAt" = $3
-      WHERE id = $4
-      RETURNING *
-    `;
-    const updateResult = await pool.query(updateQuery, [status, updatedComments, updatedAt, req.params.id]);
-    res.json(updateResult.rows[0]);
+    if (req.user.role === 'Approver L2' && currentStatus === 'L2_Approved') {
+      return res.status(400).json({
+        message: 'Forbidden. This profile is already verified and awaiting senior L1 approval.'
+      });
+    }
+
+    let targetStatus = status;
+    if (status === 'Approved') {
+      if (req.user.role === 'Approver L2') {
+        targetStatus = 'L2_Approved';
+      } else {
+        targetStatus = 'Approved';
+      }
+    }
+
+    const updatedCustomer = await dbService.updateCustomerStatus(pool, req.params.id, targetStatus, comments);
+    res.json(updatedCustomer);
   } catch (error) {
-    console.error('Error updating customer status:', error);
-    res.status(500).json({ message: 'Failed to update database' });
+    console.error('Error updating customer status:', error, req.params.id);
+    res.status(500).json({ message: error.message || 'Failed to update database' });
   }
 });
 
 // 5. Update customer details (From Admin Dashboard - Admin Only)
 app.put('/api/customers/:id', authenticateAdmin, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const {
-    legalName,
-    tradeName,
-    entityType,
-    dateOfIncorporation,
-    cin,
-    llpin,
-    pan,
-    gstin,
-    msmeStatus,
-    udyamNumber,
-    registeredAddress,
-    billingAddress,
-    primaryContact,
-    financeContact,
-    bankDetails,
-    verificationLogs,
-    googleFormResponseId,
-    panFileUrl,
-    gstFileUrl
-  } = req.body;
-
   try {
-    const query = `
-      UPDATE customers
-      SET 
-        "legalName" = $1,
-        "tradeName" = $2,
-        "entityType" = $3,
-        "dateOfIncorporation" = $4,
-        cin = $5,
-        llpin = $6,
-        pan = $7,
-        gstin = $8,
-        "msmeStatus" = $9,
-        "udyamNumber" = $10,
-        "registeredAddress" = $11,
-        "billingAddress" = $12,
-        "primaryContact" = $13,
-        "financeContact" = $14,
-        "bankDetails" = $15,
-        "verificationLogs" = $16,
-        "googleFormResponseId" = $17,
-        "panFileUrl" = $18,
-        "gstFileUrl" = $19,
-        "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $20
-      RETURNING *
-    `;
-    const values = [
-      legalName,
-      tradeName,
-      entityType,
-      dateOfIncorporation,
-      cin,
-      llpin,
-      pan,
-      gstin,
-      msmeStatus,
-      udyamNumber,
-      typeof registeredAddress === 'string' ? registeredAddress : JSON.stringify(registeredAddress),
-      typeof billingAddress === 'string' ? billingAddress : JSON.stringify(billingAddress),
-      typeof primaryContact === 'string' ? primaryContact : JSON.stringify(primaryContact),
-      typeof financeContact === 'string' ? financeContact : JSON.stringify(financeContact),
-      typeof bankDetails === 'string' ? bankDetails : JSON.stringify(bankDetails),
-      typeof verificationLogs === 'string' ? verificationLogs : JSON.stringify(verificationLogs || {}),
-      googleFormResponseId || null,
-      panFileUrl || null,
-      gstFileUrl || null,
-      id
-    ];
-
-    const result = await pool.query(query, values);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
-    res.json(result.rows[0]);
+    const updatedCustomer = await dbService.updateCustomerDetails(pool, req.params.id, req.body);
+    res.json(updatedCustomer);
   } catch (error) {
-    console.error('Error updating customer details:', error);
+    console.error('Error updating customer details:', error, req.params.id);
     res.status(500).json({ message: 'Failed to update customer details.' });
   }
 });
@@ -907,7 +1044,7 @@ app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
     return res.status(400).json({ message: 'Username, password, and role are required.' });
   }
 
-  const validRoles = ['Admin', 'Approver', 'Vendor'];
+  const validRoles = ['Admin', 'Approver L1', 'Approver L2', 'Vendor'];
   if (!validRoles.includes(role)) {
     return res.status(400).json({ message: 'Invalid role selection.' });
   }
