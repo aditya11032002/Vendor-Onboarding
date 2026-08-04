@@ -427,6 +427,27 @@ app.get('/api/vendors/my-profile', authenticateUser, async (req, res) => {
   }
 });
 
+// 0.6. Get customer profile status (For Customer Portal self-lookup)
+app.get('/api/customers/my-profile', authenticateUser, async (req, res) => {
+  try {
+    const query = `
+      SELECT *
+      FROM customers
+      WHERE LOWER("primaryContact"->>'email') = $1
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    `;
+    const result = await pool.query(query, [req.user.username.toLowerCase()]);
+    if (result.rows.length > 0) {
+      return res.json(result.rows[0]);
+    }
+    return res.json({ status: 'Sent' });
+  } catch (error) {
+    console.error('Error fetching my-profile status:', error);
+    res.status(500).json({ message: 'Internal server error fetching application status.' });
+  }
+});
+
 // 1. Get all vendors (with server-side pagination, search, and filters)
 app.get('/api/vendors', authenticateAdmin, async (req, res) => {
   try {
@@ -671,10 +692,118 @@ app.patch('/api/vendors/:id/status', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 4.5. Update vendor details (From Admin Dashboard - Admin Only)
-app.put('/api/vendors/:id', authenticateAdmin, requireAdmin, async (req, res) => {
+// 4.5. Update vendor details (From Admin Dashboard or Vendor Portal self-update - supports multi-file multipart upload)
+app.put('/api/vendors/:id', authenticateUser, upload.fields([
+  { name: 'panFile', maxCount: 1 },
+  { name: 'gstFile', maxCount: 1 },
+  { name: 'regFile', maxCount: 1 },
+  { name: 'chequeFile', maxCount: 1 },
+  { name: 'isoFile', maxCount: 1 }
+]), async (req, res) => {
   try {
-    const updatedVendor = await dbService.updateVendorDetails(pool, req.params.id, req.body);
+    const currentVendor = await dbService.getVendorById(pool, req.params.id);
+    if (!currentVendor) {
+      return res.status(404).json({ message: 'Vendor not found' });
+    }
+
+    // Authorization: Only Admin or the Vendor owner itself can update
+    const isAdmin = req.user.role === 'Admin';
+    const isOwner = req.user.role === 'Vendor' && currentVendor.primaryContact?.email?.toLowerCase() === req.user.username.toLowerCase();
+    
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden. You do not have permission to edit this profile.' });
+    }
+
+    const body = req.body;
+    const parseField = (field) => {
+      if (!field) return {};
+      if (typeof field === 'string') {
+        try { return JSON.parse(field); } catch (e) { return {}; }
+      }
+      return field;
+    };
+
+    const registeredAddress = parseField(body.registeredAddress);
+    const billingAddress = parseField(body.billingAddress);
+    const primaryContact = parseField(body.primaryContact);
+    const financeContact = parseField(body.financeContact);
+    const bankDetails = parseField(body.bankDetails);
+
+    // If new files are uploaded, resolve their URLs
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const getExt = (filesObj, fieldName) => {
+      const file = filesObj && filesObj[fieldName] && filesObj[fieldName][0];
+      return file ? path.extname(file.originalname).toLowerCase() : '';
+    };
+
+    const hasPanFile = req.files && req.files.panFile && req.files.panFile[0];
+    const hasGstFile = req.files && req.files.gstFile && req.files.gstFile[0];
+    const hasRegFile = req.files && req.files.regFile && req.files.regFile[0];
+    const hasChequeFile = req.files && req.files.chequeFile && req.files.chequeFile[0];
+    const hasIsoFile = req.files && req.files.isoFile && req.files.isoFile[0];
+
+    const updatedData = {
+      legalName: body.legalName || currentVendor.legalName,
+      tradeName: body.tradeName || currentVendor.tradeName,
+      entityType: body.entityType || currentVendor.entityType,
+      dateOfIncorporation: body.dateOfIncorporation || currentVendor.dateOfIncorporation,
+      cin: body.cin || currentVendor.cin,
+      llpin: body.llpin || currentVendor.llpin,
+      pan: body.pan ? body.pan.toUpperCase().trim() : currentVendor.pan,
+      gstStatus: body.gstStatus || currentVendor.gstStatus,
+      gstin: body.gstin ? body.gstin.toUpperCase().trim() : currentVendor.gstin,
+      msmeStatus: body.msmeStatus || currentVendor.msmeStatus,
+      udyamNumber: body.udyamNumber || currentVendor.udyamNumber,
+      registeredAddress,
+      billingAddress,
+      primaryContact,
+      financeContact,
+      bankDetails,
+      
+      panFileUrl: hasPanFile ? `${baseUrl}/api/vendors/files/${req.params.id}/pan?ext=${getExt(req.files, 'panFile')}` : currentVendor.panFileUrl,
+      gstFileUrl: hasGstFile ? `${baseUrl}/api/vendors/files/${req.params.id}/gst?ext=${getExt(req.files, 'gstFile')}` : currentVendor.gstFileUrl,
+      
+      panFileData: hasPanFile ? req.files.panFile[0].buffer : currentVendor.panFileData,
+      panFileName: hasPanFile ? req.files.panFile[0].originalname : currentVendor.panFileName,
+      panFileMimetype: hasPanFile ? req.files.panFile[0].mimetype : currentVendor.panFileMimetype,
+
+      gstFileData: hasGstFile ? req.files.gstFile[0].buffer : currentVendor.gstFileData,
+      gstFileName: hasGstFile ? req.files.gstFile[0].originalname : currentVendor.gstFileName,
+      gstFileMimetype: hasGstFile ? req.files.gstFile[0].mimetype : currentVendor.gstFileMimetype,
+
+      regFileData: hasRegFile ? req.files.regFile[0].buffer : currentVendor.regFileData,
+      regFileName: hasRegFile ? req.files.regFile[0].originalname : currentVendor.regFileName,
+      regFileMimetype: hasRegFile ? req.files.regFile[0].mimetype : currentVendor.regFileMimetype,
+
+      chequeFileData: hasChequeFile ? req.files.chequeFile[0].buffer : currentVendor.chequeFileData,
+      chequeFileName: hasChequeFile ? req.files.chequeFile[0].originalname : currentVendor.chequeFileName,
+      chequeFileMimetype: hasChequeFile ? req.files.chequeFile[0].mimetype : currentVendor.chequeFileMimetype,
+
+      isoFileData: hasIsoFile ? req.files.isoFile[0].buffer : currentVendor.isoFileData,
+      isoFileName: hasIsoFile ? req.files.isoFile[0].originalname : currentVendor.isoFileName,
+      isoFileMimetype: hasIsoFile ? req.files.isoFile[0].mimetype : currentVendor.isoFileMimetype,
+
+      verificationLogs: {
+        ...currentVendor.verificationLogs,
+        uploadedDocuments: {
+          regFileUrl: hasRegFile ? `${baseUrl}/api/vendors/files/${req.params.id}/reg?ext=${getExt(req.files, 'regFile')}` : (currentVendor.verificationLogs?.uploadedDocuments?.regFileUrl || null),
+          chequeFileUrl: hasChequeFile ? `${baseUrl}/api/vendors/files/${req.params.id}/cheque?ext=${getExt(req.files, 'chequeFile')}` : (currentVendor.verificationLogs?.uploadedDocuments?.chequeFileUrl || null),
+          isoFileUrl: hasIsoFile ? `${baseUrl}/api/vendors/files/${req.params.id}/iso?ext=${getExt(req.files, 'isoFile')}` : (currentVendor.verificationLogs?.uploadedDocuments?.isoFileUrl || null)
+        },
+        metadata: {
+          website: body.website || (currentVendor.verificationLogs?.metadata?.website || ''),
+          isoCertified: body.isoCertified || (currentVendor.verificationLogs?.metadata?.isoCertified || 'No'),
+          otherCertifications: body.otherCertifications || (currentVendor.verificationLogs?.metadata?.otherCertifications || '')
+        }
+      }
+    };
+
+    if (currentVendor.status === 'Rejected') {
+      updatedData.status = 'Pending';
+      updatedData.comments = 'Resubmitted details after compliance request corrections.';
+    }
+
+    const updatedVendor = await dbService.updateVendorDetails(pool, req.params.id, updatedData);
     res.json(updatedVendor);
   } catch (error) {
     console.error('Error updating vendor details:', error, req.params.id);
@@ -1025,10 +1154,119 @@ app.patch('/api/customers/:id/status', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 5. Update customer details (From Admin Dashboard - Admin Only)
-app.put('/api/customers/:id', authenticateAdmin, requireAdmin, async (req, res) => {
+// 5. Update customer details (From Admin Dashboard or Customer Portal self-update - supports multi-file multipart upload)
+app.put('/api/customers/:id', authenticateUser, upload.fields([
+  { name: 'panFile', maxCount: 1 },
+  { name: 'gstFile', maxCount: 1 },
+  { name: 'regFile', maxCount: 1 },
+  { name: 'chequeFile', maxCount: 1 },
+  { name: 'isoFile', maxCount: 1 }
+]), async (req, res) => {
   try {
-    const updatedCustomer = await dbService.updateCustomerDetails(pool, req.params.id, req.body);
+    const selectResult = await pool.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    if (selectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    const currentCustomer = selectResult.rows[0];
+
+    // Authorization: Only Admin or the Customer owner itself can update
+    const isAdmin = req.user.role === 'Admin';
+    const isOwner = req.user.role === 'Customer' && currentCustomer.primaryContact?.email?.toLowerCase() === req.user.username.toLowerCase();
+    
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden. You do not have permission to edit this profile.' });
+    }
+
+    const body = req.body;
+    const parseField = (field) => {
+      if (!field) return {};
+      if (typeof field === 'string') {
+        try { return JSON.parse(field); } catch (e) { return {}; }
+      }
+      return field;
+    };
+
+    const registeredAddress = parseField(body.registeredAddress);
+    const billingAddress = parseField(body.billingAddress);
+    const primaryContact = parseField(body.primaryContact);
+    const financeContact = parseField(body.financeContact);
+    const bankDetails = parseField(body.bankDetails);
+
+    // If new files are uploaded, resolve their URLs
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const getExt = (filesObj, fieldName) => {
+      const file = filesObj && filesObj[fieldName] && filesObj[fieldName][0];
+      return file ? path.extname(file.originalname).toLowerCase() : '';
+    };
+
+    const hasPanFile = req.files && req.files.panFile && req.files.panFile[0];
+    const hasGstFile = req.files && req.files.gstFile && req.files.gstFile[0];
+    const hasRegFile = req.files && req.files.regFile && req.files.regFile[0];
+    const hasChequeFile = req.files && req.files.chequeFile && req.files.chequeFile[0];
+    const hasIsoFile = req.files && req.files.isoFile && req.files.isoFile[0];
+
+    const updatedData = {
+      legalName: body.legalName || currentCustomer.legalName,
+      tradeName: body.tradeName || currentCustomer.tradeName,
+      entityType: body.entityType || currentCustomer.entityType,
+      dateOfIncorporation: body.dateOfIncorporation || currentCustomer.dateOfIncorporation,
+      cin: body.cin || currentCustomer.cin,
+      llpin: body.llpin || currentCustomer.llpin,
+      pan: body.pan ? body.pan.toUpperCase().trim() : currentCustomer.pan,
+      gstStatus: body.gstStatus || currentCustomer.gstStatus,
+      gstin: body.gstin ? body.gstin.toUpperCase().trim() : currentCustomer.gstin,
+      msmeStatus: body.msmeStatus || currentCustomer.msmeStatus,
+      udyamNumber: body.udyamNumber || currentCustomer.udyamNumber,
+      registeredAddress,
+      billingAddress,
+      primaryContact,
+      financeContact,
+      bankDetails,
+      
+      panFileUrl: hasPanFile ? `${baseUrl}/api/customers/files/${req.params.id}/pan?ext=${getExt(req.files, 'panFile')}` : currentCustomer.panFileUrl,
+      gstFileUrl: hasGstFile ? `${baseUrl}/api/customers/files/${req.params.id}/gst?ext=${getExt(req.files, 'gstFile')}` : currentCustomer.gstFileUrl,
+      
+      panFileData: hasPanFile ? req.files.panFile[0].buffer : currentCustomer.panFileData,
+      panFileName: hasPanFile ? req.files.panFile[0].originalname : currentCustomer.panFileName,
+      panFileMimetype: hasPanFile ? req.files.panFile[0].mimetype : currentCustomer.panFileMimetype,
+
+      gstFileData: hasGstFile ? req.files.gstFile[0].buffer : currentCustomer.gstFileData,
+      gstFileName: hasGstFile ? req.files.gstFile[0].originalname : currentCustomer.gstFileName,
+      gstFileMimetype: hasGstFile ? req.files.gstFile[0].mimetype : currentCustomer.gstFileMimetype,
+
+      regFileData: hasRegFile ? req.files.regFile[0].buffer : currentCustomer.regFileData,
+      regFileName: hasRegFile ? req.files.regFile[0].originalname : currentCustomer.regFileName,
+      regFileMimetype: hasRegFile ? req.files.regFile[0].mimetype : currentCustomer.regFileMimetype,
+
+      chequeFileData: hasChequeFile ? req.files.chequeFile[0].buffer : currentCustomer.chequeFileData,
+      chequeFileName: hasChequeFile ? req.files.chequeFile[0].originalname : currentCustomer.chequeFileName,
+      chequeFileMimetype: hasChequeFile ? req.files.chequeFile[0].mimetype : currentCustomer.chequeFileMimetype,
+
+      isoFileData: hasIsoFile ? req.files.isoFile[0].buffer : currentCustomer.isoFileData,
+      isoFileName: hasIsoFile ? req.files.isoFile[0].originalname : currentCustomer.isoFileName,
+      isoFileMimetype: hasIsoFile ? req.files.isoFile[0].mimetype : currentCustomer.isoFileMimetype,
+
+      verificationLogs: {
+        ...currentCustomer.verificationLogs,
+        uploadedDocuments: {
+          regFileUrl: hasRegFile ? `${baseUrl}/api/customers/files/${req.params.id}/reg?ext=${getExt(req.files, 'regFile')}` : (currentCustomer.verificationLogs?.uploadedDocuments?.regFileUrl || null),
+          chequeFileUrl: hasChequeFile ? `${baseUrl}/api/customers/files/${req.params.id}/cheque?ext=${getExt(req.files, 'chequeFile')}` : (currentCustomer.verificationLogs?.uploadedDocuments?.chequeFileUrl || null),
+          isoFileUrl: hasIsoFile ? `${baseUrl}/api/customers/files/${req.params.id}/iso?ext=${getExt(req.files, 'isoFile')}` : (currentCustomer.verificationLogs?.uploadedDocuments?.isoFileUrl || null)
+        },
+        metadata: {
+          website: body.website || (currentCustomer.verificationLogs?.metadata?.website || ''),
+          isoCertified: body.isoCertified || (currentCustomer.verificationLogs?.metadata?.isoCertified || 'No'),
+          otherCertifications: body.otherCertifications || (currentCustomer.verificationLogs?.metadata?.otherCertifications || '')
+        }
+      }
+    };
+
+    if (currentCustomer.status === 'Rejected') {
+      updatedData.status = 'Pending';
+      updatedData.comments = 'Resubmitted customer details after compliance correction request.';
+    }
+
+    const updatedCustomer = await dbService.updateCustomerDetails(pool, req.params.id, updatedData);
     res.json(updatedCustomer);
   } catch (error) {
     console.error('Error updating customer details:', error, req.params.id);
@@ -1044,7 +1282,7 @@ app.post('/api/users', authenticateAdmin, requireAdmin, async (req, res) => {
     return res.status(400).json({ message: 'Username, password, and role are required.' });
   }
 
-  const validRoles = ['Admin', 'Approver L1', 'Approver L2', 'Vendor'];
+  const validRoles = ['Admin', 'Approver L1', 'Approver L2', 'Vendor', 'Customer'];
   if (!validRoles.includes(role)) {
     return res.status(400).json({ message: 'Invalid role selection.' });
   }
@@ -1136,6 +1374,74 @@ app.post('/api/users/invite-vendor', authenticateAdmin, requireAdmin, authLimite
   } catch (error) {
     console.error('Error executing vendor invitation:', error);
     res.status(500).json({ message: 'Internal server error while inviting vendor.' });
+  }
+});
+
+// Invite a customer (Admin Only)
+app.post('/api/users/invite-customer', authenticateAdmin, requireAdmin, authLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ message: 'Customer email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Basic email format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return res.status(400).json({ message: 'Invalid email address format.' });
+  }
+
+  try {
+    // Check if user already exists
+    const checkResult = await pool.query('SELECT id FROM users WHERE username = $1', [cleanEmail]);
+    if (checkResult.rows.length > 0) {
+      return res.status(409).json({ message: 'A user with this email address already exists.' });
+    }
+
+    // Generate random 10 character password
+    const generateRandomPassword = () => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$';
+      let pass = '';
+      for (let i = 0; i < 10; i++) {
+        pass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return pass;
+    };
+    const generatedPassword = generateRandomPassword();
+
+    // Create user with 'Customer' role in DB
+    const id = uuidv4();
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = await hashPassword(generatedPassword);
+
+    await pool.query(
+      'INSERT INTO users (id, username, password, salt, role, "passwordResetRequired") VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, cleanEmail, hashedPassword, salt, 'Customer', true]
+    );
+
+    // Build the login portal link pointing to the requesting client origin
+    const portalUrl = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+
+    // Dispatch email via modular email service
+    const { emailSent, message: emailMessage } = emailService.sendCustomerInvitation({
+      toEmail: cleanEmail,
+      generatedPassword,
+      portalUrl
+    });
+
+    res.status(201).json({
+      success: true,
+      message: emailMessage,
+      emailSent,
+      username: cleanEmail,
+      password: generatedPassword,
+      portalUrl
+    });
+
+  } catch (error) {
+    console.error('Error executing customer invitation:', error);
+    res.status(500).json({ message: 'Internal server error while inviting customer.' });
   }
 });
 

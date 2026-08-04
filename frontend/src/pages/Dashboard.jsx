@@ -54,6 +54,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [inviteSuccess, setInviteSuccess] = useState(null);
+  const [inviteType, setInviteType] = useState('vendor'); // 'vendor' or 'customer'
 
   // Detail Drawer Fetching State
   const [loadingVendorId, setLoadingVendorId] = useState(null);
@@ -106,7 +107,8 @@ export default function Dashboard({ token, userRole, onLogout }) {
     setInviteSuccess(null);
 
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/users/invite-vendor`, {
+      const endpoint = inviteType === 'customer' ? 'invite-customer' : 'invite-vendor';
+      const res = await apiFetch(`${API_BASE_URL}/api/users/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,7 +119,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to send vendor invitation.');
+        throw new Error(data.message || `Failed to send ${inviteType} invitation.`);
       }
 
       setInviteSuccess(data);
@@ -365,11 +367,26 @@ export default function Dashboard({ token, userRole, onLogout }) {
           <div className="flex gap-3 self-start md:self-center">
             {isAdmin && activeTab === 'vendors' && (
               <button
-                onClick={() => setIsInviteModalOpen(true)}
+                onClick={() => {
+                  setInviteType('vendor');
+                  setIsInviteModalOpen(true);
+                }}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition text-sm font-semibold flex items-center gap-1.5 shadow-sm"
               >
                 <UserPlus className="w-4 h-4" />
                 Invite Vendor
+              </button>
+            )}
+            {isAdmin && activeTab === 'customers' && (
+              <button
+                onClick={() => {
+                  setInviteType('customer');
+                  setIsInviteModalOpen(true);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-sm font-semibold flex items-center gap-1.5 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                Invite Customer
               </button>
             )}
             <button
@@ -1611,8 +1628,10 @@ export default function Dashboard({ token, userRole, onLogout }) {
             </button>
 
             <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-4">
-              <UserPlus className="w-5 h-5 text-indigo-400" />
-              <h3 className="font-bold text-lg text-slate-100">Invite Vendor</h3>
+              <UserPlus className={`w-5 h-5 ${inviteType === 'customer' ? 'text-emerald-400' : 'text-indigo-400'}`} />
+              <h3 className="font-bold text-lg text-slate-100">
+                {inviteType === 'customer' ? 'Invite Customer' : 'Invite Vendor'}
+              </h3>
             </div>
 
             {inviteSuccess ? (
@@ -1634,7 +1653,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
                         href={inviteSuccess.portalUrl} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="text-indigo-400 hover:underline block break-all font-mono mt-0.5"
+                        className={`hover:underline block break-all font-mono mt-0.5 ${inviteType === 'customer' ? 'text-emerald-400' : 'text-indigo-400'}`}
                       >
                         {inviteSuccess.portalUrl}
                       </a>
@@ -1661,7 +1680,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
                     );
                     alert('Credentials copied to clipboard!');
                   }}
-                  className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition shadow-md"
+                  className={`w-full py-2.5 text-white font-bold rounded-xl text-xs transition shadow-md ${inviteType === 'customer' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-650 hover:bg-indigo-700'}`}
                 >
                   Copy Invitation Details
                 </button>
@@ -1669,7 +1688,7 @@ export default function Dashboard({ token, userRole, onLogout }) {
             ) : (
               <form onSubmit={handleInviteVendor} className="space-y-4">
                 {inviteError && (
-                  <div className="p-3 bg-rose-950/40 border border-rose-800/30 text-rose-450 rounded-xl text-xs flex items-center gap-2">
+                  <div className="p-3 bg-rose-955/40 border border-rose-800/30 text-rose-455 rounded-xl text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span className="font-semibold">{inviteError}</span>
                   </div>
@@ -1677,22 +1696,22 @@ export default function Dashboard({ token, userRole, onLogout }) {
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                    Vendor Email Address
+                    {inviteType === 'customer' ? 'Customer Email Address' : 'Vendor Email Address'}
                   </label>
                   <input
                     type="email"
                     required
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="e.g. partner@vendor.com"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold text-slate-200 placeholder-slate-650 focus:outline-none focus:border-indigo-500"
+                    placeholder={inviteType === 'customer' ? 'e.g. partner@customer.com' : 'e.g. partner@vendor.com'}
+                    className={`w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold text-slate-200 placeholder-slate-650 focus:outline-none ${inviteType === 'customer' ? 'focus:border-emerald-500' : 'focus:border-indigo-500'}`}
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={inviteLoading}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition shadow disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className={`w-full py-2.5 text-white font-bold rounded-xl text-xs transition shadow disabled:opacity-50 flex items-center justify-center gap-1.5 ${inviteType === 'customer' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                 >
                   {inviteLoading ? 'Creating invitation...' : 'Send Invitation Link'}
                 </button>

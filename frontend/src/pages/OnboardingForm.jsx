@@ -78,7 +78,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
   const [profileStatus, setProfileStatus] = useState(initialProfileStatus || null);
   const [profileComments, setProfileComments] = useState('');
   const [statusLoading, setStatusLoading] = useState(false);
-  const isReadOnly = (userRole === 'Vendor' && profileStatus && profileStatus !== 'Sent' && profileStatus !== 'Rejected');
+  const [isEditRequested, setIsEditRequested] = useState(false);
+  const isReadOnly = ((userRole === 'Vendor' || userRole === 'Customer') && profileStatus && profileStatus !== 'Sent' && profileStatus !== 'Rejected' && !isEditRequested);
 
   useEffect(() => {
     if (initialProfileStatus) {
@@ -87,7 +88,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
   }, [initialProfileStatus]);
 
   useEffect(() => {
-    if (userRole === 'Vendor' && currentUser) {
+    if ((userRole === 'Vendor' || userRole === 'Customer') && currentUser) {
       setFormData(prev => ({
         ...prev,
         email: currentUser,
@@ -101,11 +102,12 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
 
   useEffect(() => {
     const fetchProfileStatus = async () => {
-      if (userRole !== 'Vendor' || !currentUser) return;
+      if ((userRole !== 'Vendor' && userRole !== 'Customer') || !currentUser) return;
       try {
         setStatusLoading(true);
         const token = localStorage.getItem('admin_token');
-        const res = await apiFetch(`${API_BASE_URL}/api/vendors/my-profile`, {
+        const route = type === 'customer' ? 'customers' : 'vendors';
+        const res = await apiFetch(`${API_BASE_URL}/api/${route}/my-profile`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -211,7 +213,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
     const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
     const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
-    if (step === 1) {
+    if (step === 1 || forceUpdateView) {
       if (!formData.email.trim()) return 'Main Email Address is required';
       if (!emailRegex.test(formData.email.trim())) return 'Invalid Main Email Address format';
       if (!formData.legalName.trim()) return 'Company Name is required';
@@ -224,7 +226,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
       }
     }
     
-    if (step === 2) {
+    if (step === 2 || forceUpdateView) {
       const prim = formData.primaryContact;
       const reg = formData.registeredAddress;
       
@@ -242,7 +244,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
       if (!reg.country.trim()) return 'Country is required';
     }
 
-    if (step === 3) {
+    if (step === 3 || forceUpdateView) {
       const bank = formData.bankDetails;
       // Banking details are optional, but if any are filled, validate the rest
       const hasAnyBankData = bank.bankName.trim() || bank.beneficiaryName.trim() || bank.accountNumber.trim() || bank.ifscCode.trim();
@@ -256,14 +258,14 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
       }
     }
 
-    if (step === 4) {
+    if (step === 4 || forceUpdateView) {
       if (!formData.gstStatus) return 'Please specify if you have GST Registration';
       if (!formData.isoCertified) return 'Please specify if you have ISO Certification';
     }
 
-    if (step === 5) {
-      if (!uploadedFiles.panFile) return 'PAN Card document is required';
-      if (formData.gstStatus === 'Yes' && !uploadedFiles.gstFile) return 'GST Certificate document is required';
+    if (step === 5 || forceUpdateView) {
+      if (!uploadedFiles.panFile && !formData.panFileUrl) return 'PAN Card document is required';
+      if (formData.gstStatus === 'Yes' && !uploadedFiles.gstFile && !formData.gstFileUrl) return 'GST Certificate document is required';
       if (!formData.agree) return 'You must agree to the declaration to submit';
     }
 
@@ -337,8 +339,17 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
       if (uploadedFiles.chequeFile) dataPayload.append('chequeFile', uploadedFiles.chequeFile);
       if (uploadedFiles.isoFile) dataPayload.append('isoFile', uploadedFiles.isoFile);
 
-      const response = await apiFetch(`${API_BASE_URL}${apiEndpoint}`, {
-        method: 'POST',
+      const method = forceUpdateView ? 'PUT' : 'POST';
+      const endpointUrl = forceUpdateView 
+        ? `${API_BASE_URL}${apiEndpoint}/${submittedVendorId}`
+        : `${API_BASE_URL}${apiEndpoint}`;
+
+      const token = localStorage.getItem('admin_token');
+      const response = await apiFetch(endpointUrl, {
+        method: method,
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: dataPayload
       });
 
@@ -348,6 +359,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
       }
 
       setSubmittedVendorId(resData.id || '');
+      setProfileStatus(resData.status || 'Pending');
+      setIsEditRequested(false);
       setSuccess(true);
     } catch (err) {
       setError(err.message || 'Server error occurred during submission.');
@@ -660,10 +673,25 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
               </span>
             </div>
           )}
+          {forceUpdateView && (userRole === 'Vendor' || userRole === 'Customer') && !success && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setIsEditRequested(!isEditRequested)}
+                className={`px-6 py-2.5 rounded-xl text-xs md:text-sm font-black transition-all shadow ${
+                  isEditRequested
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                    : (userRole === 'Customer' ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-650/10' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-650/10')
+                }`}
+              >
+                {isEditRequested ? 'Cancel Editing' : 'Edit Application Details'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Progress Tracker */}
-        {!success && (
+        {!success && !forceUpdateView && (
           <div className="mb-10">
             <div className="flex justify-between items-center text-xs md:text-sm text-slate-400 font-semibold mb-3">
               <span>Step {step} of 5</span>
@@ -742,7 +770,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
             <fieldset disabled={isReadOnly} className="space-y-6 border-0 p-0 m-0">
             
             {/* STEP 1: General Details */}
-            {step === 1 && (
+            {(step === 1 || forceUpdateView) && (
               <div className="space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
                   <Building2 className="w-6 h-6 text-indigo-400" />
@@ -856,8 +884,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
             )}
 
             {/* STEP 2: Contact Details */}
-            {step === 2 && (
-              <div className="space-y-6">
+            {(step === 2 || forceUpdateView) && (
+              <div className="space-y-6 mt-10">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
                   <User className="w-6 h-6 text-indigo-400" />
                   <h3 className="text-xl font-semibold">Contact & Office Address Details</h3>
@@ -991,8 +1019,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
             )}
 
             {/* STEP 3: Banking Details */}
-            {step === 3 && (
-              <div className="space-y-6">
+            {(step === 3 || forceUpdateView) && (
+              <div className="space-y-6 mt-10">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
                   <CreditCard className="w-6 h-6 text-indigo-400" />
                   <h3 className="text-xl font-semibold">Banking Details</h3>
@@ -1079,8 +1107,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
             )}
 
             {/* STEP 4: Compliance */}
-            {step === 4 && (
-              <div className="space-y-6">
+            {(step === 4 || forceUpdateView) && (
+              <div className="space-y-6 mt-10">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
                   <FileText className="w-6 h-6 text-indigo-400" />
                   <h3 className="text-xl font-semibold">Certifications & Compliance</h3>
@@ -1159,8 +1187,8 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
             )}
 
             {/* STEP 5: Document Uploads & Declaration */}
-            {step === 5 && (
-              <div className="space-y-6">
+            {(step === 5 || forceUpdateView) && (
+              <div className="space-y-6 mt-10">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
                   <UploadCloud className="w-6 h-6 text-indigo-400" />
                   <h3 className="text-xl font-semibold">Document Uploads & Verification</h3>
@@ -1333,54 +1361,89 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
 
             {/* Form Footer Action Buttons */}
             <div className="flex justify-between items-center pt-6 border-t border-slate-800">
-              {step > 1 ? (
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  className="flex items-center gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs md:text-sm font-semibold transition-all"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Previous</span>
-                </button>
-              ) : (
-                <div />
-              )}
-
-              {step < 5 ? (
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs md:text-sm font-semibold transition-all shadow-lg hover:shadow-indigo-500/20"
-                >
-                  <span>Continue</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : !isReadOnly ? (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs md:text-sm font-semibold transition-all shadow-lg hover:shadow-indigo-500/20 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>Submitting Registration...</span>
-                    </>
+              {forceUpdateView ? (
+                <>
+                  <div />
+                  {!isReadOnly ? (
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      className={`flex items-center gap-2 px-6 py-3 text-white rounded-xl text-xs md:text-sm font-semibold transition-all shadow-lg disabled:opacity-50 ${userRole === 'Customer' ? 'bg-emerald-600 hover:bg-emerald-500 hover:shadow-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/20'}`}
+                    >
+                      {loading ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span>Submitting Registration...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Submit Application</span>
+                          <CheckCircle2 className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
                   ) : (
-                    <>
-                      <span>Submit Application</span>
-                      <CheckCircle2 className="w-4 h-4" />
-                    </>
+                    <div className="text-xs font-bold text-slate-500 border border-slate-800 bg-slate-950/40 rounded-xl px-4 py-2.5">
+                      ✓ Review Mode Only
+                    </div>
                   )}
-                </button>
+                </>
               ) : (
-                <div className="text-xs font-bold text-slate-505 border border-slate-800 bg-slate-950/40 rounded-xl px-4 py-2.5">
-                  ✓ Review Mode Only
-                </div>
+                <>
+                  {step > 1 ? (
+                    <button
+                      type="button"
+                      onClick={prevStep}
+                      className="flex items-center gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs md:text-sm font-semibold transition-all"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Previous</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  {step < 5 ? (
+                    <button
+                      type="button"
+                      onClick={nextStep}
+                      className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs md:text-sm font-semibold transition-all shadow-lg hover:shadow-indigo-500/20"
+                    >
+                      <span>Continue</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : !isReadOnly ? (
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      className={`flex items-center gap-2 px-6 py-3 text-white rounded-xl text-xs md:text-sm font-semibold transition-all shadow-lg disabled:opacity-50 ${userRole === 'Customer' ? 'bg-emerald-600 hover:bg-emerald-500 hover:shadow-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/20'}`}
+                    >
+                      {loading ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span>Submitting Registration...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Submit Application</span>
+                          <CheckCircle2 className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="text-xs font-bold text-slate-500 border border-slate-800 bg-slate-950/40 rounded-xl px-4 py-2.5">
+                      ✓ Review Mode Only
+                    </div>
+                  )}
+                </>
               )}
             </div>
             </fieldset>

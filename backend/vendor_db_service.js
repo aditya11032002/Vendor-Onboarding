@@ -419,8 +419,25 @@ const updateVendorDetails = async (pool, id, details) => {
       "googleFormResponseId" = $17,
       "panFileUrl" = $18,
       "gstFileUrl" = $19,
+      status = COALESCE($20, status),
+      comments = COALESCE($21, comments),
+      "panFileData" = COALESCE($22, "panFileData"),
+      "panFileName" = COALESCE($23, "panFileName"),
+      "panFileMimetype" = COALESCE($24, "panFileMimetype"),
+      "gstFileData" = COALESCE($25, "gstFileData"),
+      "gstFileName" = COALESCE($26, "gstFileName"),
+      "gstFileMimetype" = COALESCE($27, "gstFileMimetype"),
+      "regFileData" = COALESCE($28, "regFileData"),
+      "regFileName" = COALESCE($29, "regFileName"),
+      "regFileMimetype" = COALESCE($30, "regFileMimetype"),
+      "chequeFileData" = COALESCE($31, "chequeFileData"),
+      "chequeFileName" = COALESCE($32, "chequeFileName"),
+      "chequeFileMimetype" = COALESCE($33, "chequeFileMimetype"),
+      "isoFileData" = COALESCE($34, "isoFileData"),
+      "isoFileName" = COALESCE($35, "isoFileName"),
+      "isoFileMimetype" = COALESCE($36, "isoFileMimetype"),
       "updatedAt" = CURRENT_TIMESTAMP
-    WHERE id = $20
+    WHERE id = $37
     RETURNING *
   `;
   const values = [
@@ -443,6 +460,23 @@ const updateVendorDetails = async (pool, id, details) => {
     details.googleFormResponseId || null,
     details.panFileUrl || null,
     details.gstFileUrl || null,
+    details.status || null,
+    details.comments || null,
+    details.panFileData || null,
+    details.panFileName || null,
+    details.panFileMimetype || null,
+    details.gstFileData || null,
+    details.gstFileName || null,
+    details.gstFileMimetype || null,
+    details.regFileData || null,
+    details.regFileName || null,
+    details.regFileMimetype || null,
+    details.chequeFileData || null,
+    details.chequeFileName || null,
+    details.chequeFileMimetype || null,
+    details.isoFileData || null,
+    details.isoFileName || null,
+    details.isoFileMimetype || null,
     id
   ];
 
@@ -692,8 +726,25 @@ const updateCustomerDetails = async (pool, id, details) => {
       "googleFormResponseId" = $17,
       "panFileUrl" = $18,
       "gstFileUrl" = $19,
+      status = COALESCE($20, status),
+      comments = COALESCE($21, comments),
+      "panFileData" = COALESCE($22, "panFileData"),
+      "panFileName" = COALESCE($23, "panFileName"),
+      "panFileMimetype" = COALESCE($24, "panFileMimetype"),
+      "gstFileData" = COALESCE($25, "gstFileData"),
+      "gstFileName" = COALESCE($26, "gstFileName"),
+      "gstFileMimetype" = COALESCE($27, "gstFileMimetype"),
+      "regFileData" = COALESCE($28, "regFileData"),
+      "regFileName" = COALESCE($29, "regFileName"),
+      "regFileMimetype" = COALESCE($30, "regFileMimetype"),
+      "chequeFileData" = COALESCE($31, "chequeFileData"),
+      "chequeFileName" = COALESCE($32, "chequeFileName"),
+      "chequeFileMimetype" = COALESCE($33, "chequeFileMimetype"),
+      "isoFileData" = COALESCE($34, "isoFileData"),
+      "isoFileName" = COALESCE($35, "isoFileName"),
+      "isoFileMimetype" = COALESCE($36, "isoFileMimetype"),
       "updatedAt" = CURRENT_TIMESTAMP
-    WHERE id = $20
+    WHERE id = $37
     RETURNING *
   `;
   const values = [
@@ -716,6 +767,23 @@ const updateCustomerDetails = async (pool, id, details) => {
     details.googleFormResponseId || null,
     details.panFileUrl || null,
     details.gstFileUrl || null,
+    details.status || null,
+    details.comments || null,
+    details.panFileData || null,
+    details.panFileName || null,
+    details.panFileMimetype || null,
+    details.gstFileData || null,
+    details.gstFileName || null,
+    details.gstFileMimetype || null,
+    details.regFileData || null,
+    details.regFileName || null,
+    details.regFileMimetype || null,
+    details.chequeFileData || null,
+    details.chequeFileName || null,
+    details.chequeFileMimetype || null,
+    details.isoFileData || null,
+    details.isoFileName || null,
+    details.isoFileMimetype || null,
     id
   ];
 

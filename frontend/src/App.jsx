@@ -30,7 +30,7 @@ export default function App() {
     setAdminUser(username);
     setUserRole(role);
     setPasswordResetRequired(!!resetRequired);
-    if (role === 'Vendor') {
+    if (role === 'Vendor' || role === 'Customer') {
       setCurrentPage('vendorStatus');
       window.location.hash = '/vendor-status';
     } else {
@@ -99,7 +99,7 @@ export default function App() {
         setAdminUser(savedUser || payloadDecoded.username);
         setUserRole(payloadDecoded.role);
         setPasswordResetRequired(!!payloadDecoded.passwordResetRequired);
-        if (payloadDecoded.role === 'Vendor') {
+        if (payloadDecoded.role === 'Vendor' || payloadDecoded.role === 'Customer') {
           setCurrentPage('vendorStatus');
           window.location.hash = '/vendor-status';
         }
@@ -113,9 +113,10 @@ export default function App() {
   // Fetch vendor status for custom portal navigation mapping
   useEffect(() => {
     const checkVendorStatus = async () => {
-      if (userRole !== 'Vendor' || !token) return;
+      if ((userRole !== 'Vendor' && userRole !== 'Customer') || !token) return;
       try {
-        const res = await apiFetch(`${API_BASE_URL}/api/vendors/my-profile`, {
+        const route = userRole === 'Customer' ? 'customers' : 'vendors';
+        const res = await apiFetch(`${API_BASE_URL}/api/${route}/my-profile`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -142,7 +143,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      if (userRole === 'Vendor') {
+      if (userRole === 'Vendor' || userRole === 'Customer') {
         if (hash === '#/vendor-form' || hash === '#/form') {
           setCurrentPage('vendorForm');
         } else if (hash === '#/vendor-update' || hash === '#/update-form') {
@@ -154,9 +155,9 @@ export default function App() {
       }
       if (hash === '#/form' || hash === '#/vendor-form') {
         setCurrentPage('form');
-      } else if (hash === '#/customer-form') {
+      } else if (hash === '#/customer-form' && userRole === 'Admin') {
         setCurrentPage('customerForm');
-      } else if (hash === '#/users') {
+      } else if (hash === '#/users' && userRole === 'Admin') {
         setCurrentPage('users');
       } else {
         setCurrentPage('admin');
@@ -171,7 +172,7 @@ export default function App() {
   }, [userRole]);
 
   const navigateTo = (page) => {
-    if (userRole === 'Vendor') {
+    if (userRole === 'Vendor' || userRole === 'Customer') {
       if (page === 'vendorForm') {
         window.location.hash = '/vendor-form';
         setCurrentPage('vendorForm');
@@ -187,8 +188,10 @@ export default function App() {
     if (page === 'form') {
       window.location.hash = '/form';
     } else if (page === 'customerForm') {
+      if (userRole !== 'Admin') return;
       window.location.hash = '/customer-form';
     } else if (page === 'users') {
+      if (userRole !== 'Admin') return;
       window.location.hash = '/users';
     } else {
       window.location.hash = '/admin';
@@ -250,23 +253,23 @@ export default function App() {
 
           {/* Navigation Options */}
           <nav className="p-3 space-y-1">
-            {userRole === 'Vendor' ? (
+            {userRole === 'Vendor' || userRole === 'Customer' ? (
               <>
                 <button
                   onClick={() => navigateTo('vendorForm')}
                   className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorForm'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? `${userRole === 'Customer' ? 'bg-emerald-600' : 'bg-indigo-600'} text-white shadow-sm`
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
-                  title="Vendor Form"
+                  title={userRole === 'Customer' ? 'Customer Form' : 'Vendor Form'}
                 >
-                  <UserPlus className="w-4 h-4 shrink-0 text-indigo-500" />
-                  {!sidebarCollapsed && <span>Vendor Form</span>}
+                  <UserPlus className={`w-4 h-4 shrink-0 ${userRole === 'Customer' ? 'text-emerald-500' : 'text-indigo-500'}`} />
+                  {!sidebarCollapsed && <span>{userRole === 'Customer' ? 'Customer Form' : 'Vendor Form'}</span>}
                 </button>
                 <button
                   onClick={() => navigateTo('vendorUpdate')}
                   className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorUpdateForm'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? `${userRole === 'Customer' ? 'bg-emerald-600' : 'bg-indigo-600'} text-white shadow-sm`
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   title="Update Form"
@@ -277,7 +280,7 @@ export default function App() {
                 <button
                   onClick={() => navigateTo('vendorStatus')}
                   className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'vendorStatus'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? `${userRole === 'Customer' ? 'bg-emerald-600' : 'bg-indigo-600'} text-white shadow-sm`
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   title="Form Status"
@@ -314,7 +317,7 @@ export default function App() {
                   {!sidebarCollapsed && <span>Vendor Form</span>}
                 </button>
 
-                {userRole !== 'Vendor' && (
+                {userRole === 'Admin' && (
                   <button
                     onClick={() => navigateTo('customerForm')}
                     className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all ${currentPage === 'customerForm'
@@ -363,16 +366,16 @@ export default function App() {
 
       {/* Main Panel Content Area */}
       <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200">
-        {userRole === 'Vendor' ? (
+        {userRole === 'Vendor' || userRole === 'Customer' ? (
           <>
             {currentPage === 'vendorForm' && (
-              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceFormView={true} navigateTo={navigateTo} />
+              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceFormView={true} navigateTo={navigateTo} />
             )}
             {currentPage === 'vendorUpdateForm' && (
-              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceUpdateView={true} navigateTo={navigateTo} />
+              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceUpdateView={true} navigateTo={navigateTo} />
             )}
             {currentPage === 'vendorStatus' && (
-              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceStatusView={true} navigateTo={navigateTo} />
+              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceStatusView={true} navigateTo={navigateTo} />
             )}
           </>
         ) : (
