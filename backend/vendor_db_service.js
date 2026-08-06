@@ -149,26 +149,26 @@ const getStatsForRole = async (pool, tableName, role) => {
 
   const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
   const pendingCount = counts['Pending'] || 0;
-  const l2ApprovedCount = counts['L2_Approved'] || 0;
+  const l1ApprovedCount = counts['L1_Approved'] || 0;
   const approvedCount = (counts['Approved'] || 0) + (counts['Vendor Created'] || 0) + (counts['Customer Created'] || 0);
   const rejectedCount = counts['Rejected'] || 0;
 
-  if (role === 'Approver L2') {
+  if (role === 'Approver L1') {
     stats.pending = pendingCount;
     stats.approved = approvedCount;
     stats.rejected = rejectedCount;
     stats.total = pendingCount + approvedCount + rejectedCount;
-  } else if (role === 'Approver L1') {
-    stats.pending = l2ApprovedCount;
+  } else if (role === 'Approver L2') {
+    stats.pending = l1ApprovedCount;
     stats.approved = approvedCount;
     stats.rejected = rejectedCount;
-    stats.total = l2ApprovedCount + approvedCount + rejectedCount;
+    stats.total = l1ApprovedCount + approvedCount + rejectedCount;
   } else {
     // Admin or default
-    stats.pending = pendingCount + l2ApprovedCount;
+    stats.pending = pendingCount + l1ApprovedCount;
     stats.approved = approvedCount;
     stats.rejected = rejectedCount;
-    stats.total = pendingCount + l2ApprovedCount + approvedCount + rejectedCount;
+    stats.total = pendingCount + l1ApprovedCount + approvedCount + rejectedCount;
   }
   return stats;
 };
@@ -189,21 +189,21 @@ const getPaginatedVendors = async (pool, queryParams) => {
 
   let statusClause = '';
   if (status === 'Pending') {
-    if (role === 'Approver L2') {
+    if (role === 'Approver L1') {
       statusClause = ` AND status = 'Pending'`;
-    } else if (role === 'Approver L1') {
-      statusClause = ` AND status = 'L2_Approved'`;
+    } else if (role === 'Approver L2') {
+      statusClause = ` AND status = 'L1_Approved'`;
     } else {
-      statusClause = ` AND status IN ('Pending', 'L2_Approved')`;
+      statusClause = ` AND status IN ('Pending', 'L1_Approved')`;
     }
   } else if (status === 'Approved') {
     statusClause = ` AND status IN ('Approved', 'Vendor Created')`;
   } else if (status === 'Rejected') {
     statusClause = ` AND status = 'Rejected'`;
   } else if (status === 'All') {
-    if (role === 'Approver L2') {
-      statusClause = ` AND status != 'L2_Approved'`;
-    } else if (role === 'Approver L1') {
+    if (role === 'Approver L1') {
+      statusClause = ` AND status != 'L1_Approved'`;
+    } else if (role === 'Approver L2') {
       statusClause = ` AND status != 'Pending'`;
     }
   }
@@ -502,21 +502,21 @@ const getPaginatedCustomers = async (pool, queryParams) => {
 
   let statusClause = '';
   if (status === 'Pending') {
-    if (role === 'Approver L2') {
+    if (role === 'Approver L1') {
       statusClause = ` AND status = 'Pending'`;
-    } else if (role === 'Approver L1') {
-      statusClause = ` AND status = 'L2_Approved'`;
+    } else if (role === 'Approver L2') {
+      statusClause = ` AND status = 'L1_Approved'`;
     } else {
-      statusClause = ` AND status IN ('Pending', 'L2_Approved')`;
+      statusClause = ` AND status IN ('Pending', 'L1_Approved')`;
     }
   } else if (status === 'Approved') {
     statusClause = ` AND status IN ('Approved', 'Customer Created')`;
   } else if (status === 'Rejected') {
     statusClause = ` AND status = 'Rejected'`;
   } else if (status === 'All') {
-    if (role === 'Approver L2') {
-      statusClause = ` AND status != 'L2_Approved'`;
-    } else if (role === 'Approver L1') {
+    if (role === 'Approver L1') {
+      statusClause = ` AND status != 'L1_Approved'`;
+    } else if (role === 'Approver L2') {
       statusClause = ` AND status != 'Pending'`;
     }
   }

@@ -440,7 +440,7 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
     
     let activeIndex = 0;
     if (profileStatus === 'Pending') activeIndex = 1;
-    if (profileStatus === 'L2_Approved') activeIndex = 2;
+    if (profileStatus === 'L1_Approved') activeIndex = 2;
     if (isApproved) activeIndex = 3;
 
     const stepsList = [
@@ -458,12 +458,12 @@ export default function OnboardingForm({ type = 'vendor', currentUser, userRole,
 
     if (profileStatus === 'Pending') {
       statusHeader = 'Application Received';
-      statusDesc = 'Your application has been received and is queued for verification. Currently awaiting compliance audit (Level 2 Approver).';
+      statusDesc = 'Your application has been received and is queued for verification. Currently awaiting compliance audit (Level 1 Approver).';
       statusThemeClass = 'from-blue-500/20 to-blue-950/40 border-blue-500/30 text-blue-400';
       StatusIcon = Building2;
-    } else if (profileStatus === 'L2_Approved') {
+    } else if (profileStatus === 'L1_Approved') {
       statusHeader = 'Compliance Verified';
-      statusDesc = 'Your application has successfully passed Maker-level compliance check. Currently awaiting checker approval (Level 1 Approver).';
+      statusDesc = 'Your application has successfully passed Maker-level compliance check. Currently awaiting checker approval (Level 2 Approver).';
       statusThemeClass = 'from-amber-500/20 to-amber-955/40 border-amber-500/30 text-amber-400';
       StatusIcon = ShieldAlert;
     } else if (isApproved) {

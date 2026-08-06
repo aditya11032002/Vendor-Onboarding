@@ -602,11 +602,11 @@ export default function Dashboard({ token, userRole, onLogout }) {
                             bgClasses = 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/50';
                             dotClass = 'bg-emerald-400';
                           } else if (vendor.status === 'Pending') {
-                            label = 'Awaiting L2 Review';
+                            label = 'Awaiting L1 Review';
                             bgClasses = 'bg-indigo-950/40 text-indigo-400 border border-indigo-800/50';
                             dotClass = 'bg-indigo-400';
-                          } else if (vendor.status === 'L2_Approved') {
-                            label = 'Awaiting L1 Review';
+                          } else if (vendor.status === 'L1_Approved') {
+                            label = 'Awaiting L2 Review';
                             bgClasses = 'bg-amber-955/40 text-amber-400 border border-amber-800/50';
                             dotClass = 'bg-amber-400';
                           } else if (vendor.status === 'Rejected') {
@@ -1530,9 +1530,9 @@ export default function Dashboard({ token, userRole, onLogout }) {
             {/* Action Bar */}
             <div className="p-6 bg-slate-950 border-t border-slate-800 space-y-4">
               {/* Comment text area */}
-              {!isEditing && (selectedVendor.status === 'Pending' || selectedVendor.status === 'L2_Approved') && 
-                ((selectedVendor.status === 'Pending' && (userRole === 'Approver L2' || userRole === 'Admin')) ||
-                 (selectedVendor.status === 'L2_Approved' && (userRole === 'Approver L1' || userRole === 'Admin'))) && (
+              {!isEditing && (selectedVendor.status === 'Pending' || selectedVendor.status === 'L1_Approved') && 
+                ((selectedVendor.status === 'Pending' && (userRole === 'Approver L1' || userRole === 'Admin')) ||
+                 (selectedVendor.status === 'L1_Approved' && (userRole === 'Approver L2' || userRole === 'Admin'))) && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-2">Review Comments / Rejection Reasons</label>
                   <textarea
@@ -1564,10 +1564,10 @@ export default function Dashboard({ token, userRole, onLogout }) {
                       {editLoading ? 'Saving...' : 'Save Changes'}
                     </button>
                   </>
-                ) : (selectedVendor.status === 'Pending' || selectedVendor.status === 'L2_Approved') ? (
+                ) : (selectedVendor.status === 'Pending' || selectedVendor.status === 'L1_Approved') ? (
                   <>
-                    {((selectedVendor.status === 'Pending' && (userRole === 'Approver L2' || userRole === 'Admin')) ||
-                      (selectedVendor.status === 'L2_Approved' && (userRole === 'Approver L1' || userRole === 'Admin'))) ? (
+                    {((selectedVendor.status === 'Pending' && (userRole === 'Approver L1' || userRole === 'Admin')) ||
+                      (selectedVendor.status === 'L1_Approved' && (userRole === 'Approver L2' || userRole === 'Admin'))) ? (
                       <>
                         <button
                           onClick={() => handleStatusUpdate(selectedVendor.id, 'Rejected')}
@@ -1583,14 +1583,14 @@ export default function Dashboard({ token, userRole, onLogout }) {
                           className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/10 flex items-center gap-1.5"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          {selectedVendor.status === 'Pending' ? 'Verify & Send to L1' : 'Final Approve & Onboard'}
+                          {selectedVendor.status === 'Pending' ? 'Verify & Send to L2' : 'Final Approve & Onboard'}
                         </button>
                       </>
                     ) : (
                       <div className="text-sm font-semibold text-slate-500 py-2">
                         {selectedVendor.status === 'Pending' 
-                          ? 'Awaiting Level 2 Initial Review (Read Only).' 
-                          : 'Awaiting Level 1 Senior Approval (Read Only).'}
+                          ? 'Awaiting Level 1 Initial Review (Read Only).' 
+                          : 'Awaiting Level 2 Final Approval (Read Only).'}
                       </div>
                     )}
                   </>

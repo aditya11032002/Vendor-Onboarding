@@ -662,23 +662,23 @@ app.patch('/api/vendors/:id/status', authenticateAdmin, async (req, res) => {
       return res.status(404).json({ message: 'Vendor not found' });
     }
 
-    // Role-based Maker-Checker stage enforcement
-    if (req.user.role === 'Approver L1' && currentVendor.status === 'Pending') {
+    // Role-based Maker-Checker stage enforcement (L1 is Maker, L2 is Checker)
+    if (req.user.role === 'Approver L2' && currentVendor.status === 'Pending') {
       return res.status(400).json({
-        message: 'Forbidden. This profile must first be verified by Approver L2 before L1 senior approval.'
+        message: 'Forbidden. This profile must first be verified by Approver L1 before L2 senior approval.'
       });
     }
 
-    if (req.user.role === 'Approver L2' && currentVendor.status === 'L2_Approved') {
+    if (req.user.role === 'Approver I1' || (req.user.role === 'Approver L1' && currentVendor.status === 'L1_Approved')) {
       return res.status(400).json({
-        message: 'Forbidden. This profile is already verified and awaiting senior L1 approval.'
+        message: 'Forbidden. This profile is already verified and awaiting senior L2 approval.'
       });
     }
 
     let targetStatus = status;
     if (status === 'Approved') {
-      if (req.user.role === 'Approver L2') {
-        targetStatus = 'L2_Approved';
+      if (req.user.role === 'Approver L1') {
+        targetStatus = 'L1_Approved';
       } else {
         targetStatus = 'Approved';
       }
@@ -1124,23 +1124,23 @@ app.patch('/api/customers/:id/status', authenticateAdmin, async (req, res) => {
     }
     const currentStatus = selectResult.rows[0].status;
 
-    // Role-based Maker-Checker stage enforcement
-    if (req.user.role === 'Approver L1' && currentStatus === 'Pending') {
+    // Role-based Maker-Checker stage enforcement (L1 is Maker, L2 is Checker)
+    if (req.user.role === 'Approver L2' && currentStatus === 'Pending') {
       return res.status(400).json({
-        message: 'Forbidden. This profile must first be verified by Approver L2 before L1 senior approval.'
+        message: 'Forbidden. This profile must first be verified by Approver L1 before L2 senior approval.'
       });
     }
 
-    if (req.user.role === 'Approver L2' && currentStatus === 'L2_Approved') {
+    if (req.user.role === 'Approver I1' || (req.user.role === 'Approver L1' && currentStatus === 'L1_Approved')) {
       return res.status(400).json({
-        message: 'Forbidden. This profile is already verified and awaiting senior L1 approval.'
+        message: 'Forbidden. This profile is already verified and awaiting senior L2 approval.'
       });
     }
 
     let targetStatus = status;
     if (status === 'Approved') {
-      if (req.user.role === 'Approver L2') {
-        targetStatus = 'L2_Approved';
+      if (req.user.role === 'Approver L1') {
+        targetStatus = 'L1_Approved';
       } else {
         targetStatus = 'Approved';
       }
