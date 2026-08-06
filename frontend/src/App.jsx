@@ -365,32 +365,73 @@ export default function App() {
       </aside>
 
       {/* Main Panel Content Area */}
-      <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200">
-        {userRole === 'Vendor' || userRole === 'Customer' ? (
-          <>
-            {currentPage === 'vendorForm' && (
-              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceFormView={true} navigateTo={navigateTo} />
-            )}
-            {currentPage === 'vendorUpdateForm' && (
-              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceUpdateView={true} navigateTo={navigateTo} />
-            )}
-            {currentPage === 'vendorStatus' && (
-              <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceStatusView={true} navigateTo={navigateTo} />
-            )}
-          </>
-        ) : (
-          <>
-            {currentPage === 'form' ? (
-              <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} />
-            ) : currentPage === 'customerForm' ? (
-              <OnboardingForm type="customer" currentUser={adminUser} userRole={userRole} />
-            ) : currentPage === 'users' ? (
-              <UsersSettings token={token} />
-            ) : (
-              <Dashboard token={token} userRole={userRole} onLogout={handleLogout} />
-            )}
-          </>
+      <main className="flex-1 min-h-screen overflow-y-auto bg-slate-950 text-slate-100 transition-colors duration-200 flex flex-col">
+        {/* Top Header Bar */}
+        {adminUser && (
+          <header className="bg-slate-900/60 backdrop-blur-md border-b border-slate-800/80 px-6 py-3.5 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">
+                {currentPage === 'admin' ? 'Dashboard Overview' :
+                 currentPage === 'users' ? 'Account Configurations' :
+                 currentPage === 'form' ? 'Vendor Registration' :
+                 currentPage === 'customerForm' ? 'Customer Registration' :
+                 currentPage === 'vendorForm' ? 'Self Registration' :
+                 currentPage === 'vendorUpdateForm' ? 'Update Details' :
+                 currentPage === 'vendorStatus' ? 'Status Tracker' : 'Portal'}
+              </span>
+            </div>
+
+            {/* Profile Pill */}
+            <div className="flex items-center gap-3 bg-slate-950 border border-slate-800/80 rounded-xl px-3 py-1.5 shadow-sm">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm uppercase ${
+                userRole === 'Customer'
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-400'
+              }`}>
+                {adminUser[0]}
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-slate-200 max-w-[180px] truncate leading-tight">
+                  {adminUser}
+                </span>
+                <span className={`text-[9px] font-extrabold uppercase tracking-wider leading-tight ${
+                  userRole === 'Customer' ? 'text-emerald-400' : 'text-indigo-400'
+                }`}>
+                  {userRole}
+                </span>
+              </div>
+            </div>
+          </header>
         )}
+
+        {/* Content Body Container */}
+        <div className="flex-1">
+          {userRole === 'Vendor' || userRole === 'Customer' ? (
+            <>
+              {currentPage === 'vendorForm' && (
+                <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceFormView={true} navigateTo={navigateTo} />
+              )}
+              {currentPage === 'vendorUpdateForm' && (
+                <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceUpdateView={true} navigateTo={navigateTo} />
+              )}
+              {currentPage === 'vendorStatus' && (
+                <OnboardingForm type={userRole === 'Customer' ? 'customer' : 'vendor'} currentUser={adminUser} userRole={userRole} initialProfileStatus={vendorStatus} forceStatusView={true} navigateTo={navigateTo} />
+              )}
+            </>
+          ) : (
+            <>
+              {currentPage === 'form' ? (
+                <OnboardingForm type="vendor" currentUser={adminUser} userRole={userRole} />
+              ) : currentPage === 'customerForm' ? (
+                <OnboardingForm type="customer" currentUser={adminUser} userRole={userRole} />
+              ) : currentPage === 'users' ? (
+                <UsersSettings token={token} />
+              ) : (
+                <Dashboard token={token} userRole={userRole} onLogout={handleLogout} />
+              )}
+            </>
+          )}
+        </div>
       </main>
     </div>
   );
